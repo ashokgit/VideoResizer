@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: video-processor-backend
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./temp:/app/temp
+      - ./input:/app/input
+      - ./output:/app/output
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+      - MAX_CONTENT_LENGTH=2147483648  # 2GB in bytes
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5001/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - video-processor-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: video-processor-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - REACT_APP_API_URL=/api
+      - NODE_ENV=production
+    volumes:
+      - frontend_node_modules:/app/node_modules
+      - ./frontend:/app
+      - /app/build
+    restart: unless-stopped
+    networks:
+      - video-processor-network
+
+  # Legacy CLI version (optional)
+  video-processor-cli:
+    build: .
+    container_name: video-processor-cli
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python main.py
+    stdin_open: true
+    tty: true
+    profiles:
+      - cli
+
+  # Batch processing version (optional)
+  video-processor-batch:
+    build: .
+    container_name: video-processor-batch
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+    environment:
+      - INPUT_FILE=${INPUT_FILE:-input/sample.mp4}
+      - OUTPUT_FILE=${OUTPUT_FILE:-output/processed.mp4}
+      - TARGET_RATIO_W=${TARGET_RATIO_W:-9}
+      - TARGET_RATIO_H=${TARGET_RATIO_H:-16}
+      - RESIZE_METHOD=${RESIZE_METHOD:-crop}
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python batch_process.py
+    profiles:
+      - batch
+
+volumes:
+  frontend_node_modules:
+  temp_data:
+  input_data:
+  output_data:
+
+networks:
+  video-processor-network:
+    driver: bridge
