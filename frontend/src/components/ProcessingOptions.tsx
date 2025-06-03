@@ -344,7 +344,7 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
                                         endTime={endTime || mainVideo.info.duration}
                                         onTimeChange={handleTimeChange}
                                         disabled={disabled}
-                                        fullWidth
+                                        fullWidth={true}
                                     />
                                     <Box sx={{ mt: 4 }}>
                                         {/* Place controls and timing info here, using the freed-up space */}

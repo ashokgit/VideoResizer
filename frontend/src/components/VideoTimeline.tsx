@@ -43,6 +43,7 @@ interface VideoTimelineProps {
     endTime: number;
     onTimeChange: (startTime: number, endTime: number) => void;
     disabled?: boolean;
+    fullWidth?: boolean;
 }
 
 const VideoTimeline: React.FC<VideoTimelineProps> = ({
@@ -51,7 +52,8 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
     startTime,
     endTime,
     onTimeChange,
-    disabled = false
+    disabled = false,
+    fullWidth = false
 }) => {
     const theme = useTheme();
     const [isPlaying, setIsPlaying] = useState(false);
