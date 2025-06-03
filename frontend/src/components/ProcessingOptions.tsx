@@ -336,14 +336,20 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
                     <Fade in={enableTimeCrop}>
                         <Box>
                             {enableTimeCrop && mainVideo && (
-                                <VideoTimeline
-                                    videoInfo={mainVideo.info}
-                                    fileId={mainVideo.fileId}
-                                    startTime={startTime}
-                                    endTime={endTime || mainVideo.info.duration}
-                                    onTimeChange={handleTimeChange}
-                                    disabled={disabled}
-                                />
+                                <>
+                                    <VideoTimeline
+                                        videoInfo={mainVideo.info}
+                                        fileId={mainVideo.fileId}
+                                        startTime={startTime}
+                                        endTime={endTime || mainVideo.info.duration}
+                                        onTimeChange={handleTimeChange}
+                                        disabled={disabled}
+                                        fullWidth
+                                    />
+                                    <Box sx={{ mt: 4 }}>
+                                        {/* Place controls and timing info here, using the freed-up space */}
+                                    </Box>
+                                </>
                             )}
                         </Box>
                     </Fade>

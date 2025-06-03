@@ -123,8 +123,8 @@ const VideoProcessor: React.FC = () => {
             )}
 
             <Grid container spacing={4}>
-                {/* Left Column - Upload and Preview */}
-                <Grid item xs={12} lg={6}>
+                {/* Left Column - Upload and Preview (Sidebar) */}
+                <Grid item xs={12} md={3}>
                     <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={2}>
@@ -161,8 +161,8 @@ const VideoProcessor: React.FC = () => {
                     )}
                 </Grid>
 
-                {/* Right Column - Processing Options */}
-                <Grid item xs={12} lg={6}>
+                {/* Right Column - Processing Options (Main Content) */}
+                <Grid item xs={12} md={9}>
                     <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Box display="flex" alignItems="center" mb={2}>

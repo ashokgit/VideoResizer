@@ -18,7 +18,8 @@ import {
     ButtonGroup,
     Fade,
     useTheme,
-    alpha
+    alpha,
+    Button
 } from '@mui/material';
 import {
     PlayArrow as PlayIcon,
@@ -29,7 +30,9 @@ import {
     VolumeUp as VolumeIcon,
     Replay as ReplayIcon,
     ContentCut as CutIcon,
-    Schedule as ScheduleIcon
+    Schedule as ScheduleIcon,
+    VerticalAlignBottom as SetStartIcon,
+    VerticalAlignTop as SetEndIcon
 } from '@mui/icons-material';
 import { VideoInfo } from '../types';
 
@@ -58,9 +61,12 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
     const [previewProgress, setPreviewProgress] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const [hoveredThumb, setHoveredThumb] = useState<'start' | 'end' | null>(null);
+    const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
     const previewVideoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [ariaAnnouncement, setAriaAnnouncement] = useState('');
+    const ariaLiveRef = useRef<HTMLDivElement>(null);
 
     const duration = videoInfo.duration;
     const selectedRange: [number, number] = [startTime, endTime];
@@ -182,6 +188,24 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
         onTimeChange(startTime, clampedValue);
     };
 
+    const handleSetStartTime = () => {
+        if (previewVideoRef.current) {
+            const newStartTime = previewVideoRef.current.currentTime;
+            if (newStartTime < endTime) {
+                onTimeChange(newStartTime, endTime);
+            }
+        }
+    };
+
+    const handleSetEndTime = () => {
+        if (previewVideoRef.current) {
+            const newEndTime = previewVideoRef.current.currentTime;
+            if (newEndTime > startTime) {
+                onTimeChange(startTime, newEndTime);
+            }
+        }
+    };
+
     // Enhanced timeline click with better precision
     const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
@@ -189,10 +213,53 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
         const clickRatio = clickX / rect.width;
         const clickTime = clickRatio * duration;
 
-        if (previewVideoRef.current) {
+        if (previewVideoRef.current && !isDraggingPlayhead) {
             previewVideoRef.current.currentTime = Math.max(0, Math.min(duration, clickTime));
+            setCurrentTime(previewVideoRef.current.currentTime);
         }
     };
+
+    const handlePlayheadMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        setIsDraggingPlayhead(true);
+    };
+
+    const handlePlayheadMouseMove = useCallback((event: MouseEvent) => {
+        if (isDraggingPlayhead && previewVideoRef.current) {
+            const timelineElement = event.currentTarget as HTMLElement;
+            const timelineBar = document.getElementById('timeline-bar');
+            if (!timelineBar) return;
+
+            const rect = timelineBar.getBoundingClientRect();
+            let moveX = event.clientX - rect.left;
+            moveX = Math.max(0, Math.min(moveX, rect.width));
+            const moveRatio = moveX / rect.width;
+            const newTime = moveRatio * duration;
+
+            previewVideoRef.current.currentTime = newTime;
+            setCurrentTime(newTime);
+        }
+    }, [isDraggingPlayhead, duration]);
+
+    const handlePlayheadMouseUp = useCallback(() => {
+        if (isDraggingPlayhead) {
+            setIsDraggingPlayhead(false);
+        }
+    }, [isDraggingPlayhead]);
+
+    useEffect(() => {
+        if (isDraggingPlayhead) {
+            document.addEventListener('mousemove', handlePlayheadMouseMove);
+            document.addEventListener('mouseup', handlePlayheadMouseUp);
+        } else {
+            document.removeEventListener('mousemove', handlePlayheadMouseMove);
+            document.removeEventListener('mouseup', handlePlayheadMouseUp);
+        }
+        return () => {
+            document.removeEventListener('mousemove', handlePlayheadMouseMove);
+            document.removeEventListener('mouseup', handlePlayheadMouseUp);
+        };
+    }, [isDraggingPlayhead, handlePlayheadMouseMove, handlePlayheadMouseUp]);
 
     // Update current time and preview progress with enhanced logic
     useEffect(() => {
@@ -234,11 +301,55 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
         };
     }, [startTime, endTime, selectionDuration, isPlaying]);
 
+    // Announce play/pause and time changes
+    useEffect(() => {
+        setAriaAnnouncement(isPlaying ? 'Playing selection' : 'Paused');
+    }, [isPlaying]);
+
+    useEffect(() => {
+        setAriaAnnouncement(`Current time: ${formatTimePrecise(currentTime)}`);
+    }, [currentTime]);
+
+    // Keyboard navigation for timeline and controls
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (disabled) return;
+        let handled = false;
+        if (event.key === ' ') {
+            handlePlayPause();
+            handled = true;
+        } else if (event.key === 'ArrowLeft') {
+            // Move playhead or selection left
+            if (previewVideoRef.current) {
+                previewVideoRef.current.currentTime = Math.max(0, previewVideoRef.current.currentTime - 1);
+            }
+            handled = true;
+        } else if (event.key === 'ArrowRight') {
+            if (previewVideoRef.current) {
+                previewVideoRef.current.currentTime = Math.min(duration, previewVideoRef.current.currentTime + 1);
+            }
+            handled = true;
+        } else if (event.key === 'Home') {
+            if (previewVideoRef.current) {
+                previewVideoRef.current.currentTime = startTime;
+            }
+            handled = true;
+        } else if (event.key === 'End') {
+            if (previewVideoRef.current) {
+                previewVideoRef.current.currentTime = endTime;
+            }
+            handled = true;
+        }
+        if (handled) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    };
+
     return (
         <Card
             elevation={8}
             sx={{
-                background: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, 0.02)}, ${alpha(theme.palette.secondary.main, 0.02)})`,
+                background: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, 0.04)}, ${alpha(theme.palette.secondary.main, 0.04)})`,
                 borderRadius: 3,
                 overflow: 'visible',
                 position: 'relative',
@@ -253,7 +364,14 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                     borderRadius: '12px 12px 0 0'
                 }
             }}
+            tabIndex={0}
+            aria-label="Video timeline editor"
+            onKeyDown={handleKeyDown}
         >
+            {/* ARIA live region for announcements */}
+            <Box ref={ariaLiveRef} sx={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }} aria-live="polite">
+                {ariaAnnouncement}
+            </Box>
             <CardContent sx={{ p: 4 }}>
                 {/* Hidden video element for thumbnail generation */}
                 <video
@@ -308,7 +426,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
 
                 <Grid container spacing={4}>
                     {/* Enhanced Preview Player */}
-                    <Grid item xs={12} lg={5}>
+                    <Grid item xs={12} lg={7}>
                         <Card
                             elevation={4}
                             sx={{
@@ -387,6 +505,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                                             sx={{
                                                                 bgcolor: isPlaying ? theme.palette.secondary.main : theme.palette.primary.main,
                                                                 color: 'white',
+                                                                transform: 'scale(1.1)',
                                                                 '&:hover': {
                                                                     bgcolor: isPlaying ? theme.palette.secondary.dark : theme.palette.primary.dark
                                                                 }
@@ -424,7 +543,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                     </Grid>
 
                     {/* Enhanced Timeline Controls */}
-                    <Grid item xs={12} lg={7}>
+                    <Grid item xs={12} lg={5}>
                         {/* Enhanced Thumbnail Timeline */}
                         <Box sx={{ mb: 4 }}>
                             <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -464,9 +583,18 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                         '&:hover': {
                                             borderColor: theme.palette.primary.main,
                                             boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.3)}`,
-                                            transform: 'scale(1.01)'
+                                            transform: 'scale(1.01)',
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                                        },
+                                        outline: 'none',
+                                        '&:focus': {
+                                            borderColor: theme.palette.secondary.main,
+                                            boxShadow: `0 0 0 3px ${alpha(theme.palette.secondary.main, 0.3)}`,
                                         }
                                     }}
+                                    tabIndex={0}
+                                    aria-label="Video timeline, use left/right arrows to scrub, space to play/pause"
+                                    onKeyDown={handleKeyDown}
                                 >
                                     <Box
                                         sx={{
@@ -475,6 +603,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                             backgroundColor: '#f5f5f5',
                                             position: 'relative',
                                         }}
+                                        id="timeline-bar"
                                     >
                                         {thumbnails.map((thumbnail, index) => (
                                             <Box
@@ -524,6 +653,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                         {/* Enhanced Current time indicator */}
                                         {currentTime >= startTime && currentTime <= endTime && (
                                             <Box
+                                                onMouseDown={handlePlayheadMouseDown}
                                                 sx={{
                                                     position: 'absolute',
                                                     top: -2,
@@ -551,33 +681,81 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                             />
                                         )}
                                     </Box>
-                                </Card>
-
-                                {/* Enhanced Time markers */}
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2, px: 1 }}>
-                                    {Array.from({ length: 7 }, (_, i) => (
-                                        <Typography
-                                            key={i}
-                                            variant="caption"
-                                            color="text.secondary"
+                                    <Box sx={{ px: 3, pt: 2, pb: 1 }}>
+                                        <Slider
+                                            value={selectedRange}
+                                            onChange={handleRangeChange}
+                                            onChangeCommitted={() => setIsDragging(false)}
+                                            valueLabelDisplay="auto"
+                                            valueLabelFormat={formatTimePrecise}
+                                            min={0}
+                                            max={duration}
+                                            step={0.1}
+                                            disabled={disabled}
                                             sx={{
-                                                fontWeight: 'medium',
-                                                background: alpha(theme.palette.background.paper, 0.8),
-                                                px: 1,
-                                                py: 0.5,
-                                                borderRadius: 1
+                                                height: 16,
+                                                '& .MuiSlider-track': {
+                                                    background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                                                    height: 16,
+                                                    border: 'none',
+                                                    borderRadius: 8
+                                                },
+                                                '& .MuiSlider-rail': {
+                                                    backgroundColor: alpha(theme.palette.grey[700], 0.5),
+                                                    height: 16,
+                                                    borderRadius: 8
+                                                },
+                                                '& .MuiSlider-thumb': {
+                                                    backgroundColor: theme.palette.background.paper,
+                                                    width: 36,
+                                                    height: 36,
+                                                    border: `4px solid ${theme.palette.primary.main}`,
+                                                    boxShadow: `0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
+                                                    '&::before': {
+                                                        boxShadow: 'none'
+                                                    },
+                                                    '&:hover, &.Mui-focusVisible': {
+                                                        boxShadow: `0 0 0 16px ${alpha(theme.palette.primary.main, 0.16)}, 0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`
+                                                    },
+                                                    '&.Mui-active': {
+                                                        boxShadow: `0 0 0 24px ${alpha(theme.palette.primary.main, 0.2)}, 0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`
+                                                    }
+                                                },
+                                                '& .MuiSlider-valueLabel': {
+                                                    background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
+                                                    borderRadius: 2,
+                                                    fontWeight: 'bold',
+                                                    fontSize: '0.875rem',
+                                                    '&::before': {
+                                                        borderTopColor: theme.palette.primary.dark
+                                                    }
+                                                }
                                             }}
-                                        >
-                                            {formatTime((duration / 6) * i)}
-                                        </Typography>
-                                    ))}
-                                </Box>
+                                            aria-label="Select time range for trimming"
+                                        />
+                                    </Box>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, px: 1 }}>
+                                        {Array.from({ length: 7 }, (_, i) => (
+                                            <Typography
+                                                key={i}
+                                                variant="caption"
+                                                color="text.secondary"
+                                                sx={{
+                                                    fontWeight: 'medium',
+                                                    background: alpha(theme.palette.background.paper, 0.8),
+                                                    px: 1,
+                                                    py: 0.5,
+                                                    borderRadius: 1
+                                                }}
+                                            >
+                                                {formatTime((duration / 6) * i)}
+                                            </Typography>
+                                        ))}
+                                    </Box>
+                                </Card>
                             </Box>
                         </Box>
 
-                        <Divider sx={{ my: 3 }} />
-
-                        {/* Enhanced Range Slider */}
                         <Box sx={{ mb: 4, px: 2 }}>
                             <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
                                 Selection Range
@@ -593,32 +771,32 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                 step={0.1}
                                 disabled={disabled}
                                 sx={{
-                                    height: 12,
+                                    height: 16,
                                     '& .MuiSlider-track': {
                                         background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                                        height: 12,
+                                        height: 16,
                                         border: 'none',
-                                        borderRadius: 6
+                                        borderRadius: 8
                                     },
                                     '& .MuiSlider-rail': {
-                                        backgroundColor: alpha(theme.palette.grey[400], 0.3),
-                                        height: 12,
-                                        borderRadius: 6
+                                        backgroundColor: alpha(theme.palette.grey[700], 0.5),
+                                        height: 16,
+                                        borderRadius: 8
                                     },
                                     '& .MuiSlider-thumb': {
-                                        backgroundColor: 'white',
-                                        width: 28,
-                                        height: 28,
-                                        border: `3px solid ${theme.palette.primary.main}`,
+                                        backgroundColor: theme.palette.background.paper,
+                                        width: 36,
+                                        height: 36,
+                                        border: `4px solid ${theme.palette.primary.main}`,
                                         boxShadow: `0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
                                         '&::before': {
                                             boxShadow: 'none'
                                         },
                                         '&:hover, &.Mui-focusVisible': {
-                                            boxShadow: `0 0 0 12px ${alpha(theme.palette.primary.main, 0.16)}, 0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`
+                                            boxShadow: `0 0 0 16px ${alpha(theme.palette.primary.main, 0.16)}, 0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`
                                         },
                                         '&.Mui-active': {
-                                            boxShadow: `0 0 0 20px ${alpha(theme.palette.primary.main, 0.2)}, 0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`
+                                            boxShadow: `0 0 0 24px ${alpha(theme.palette.primary.main, 0.2)}, 0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`
                                         }
                                     },
                                     '& .MuiSlider-valueLabel': {
@@ -631,6 +809,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                         }
                                     }
                                 }}
+                                aria-label="Select time range for trimming"
                             />
                         </Box>
 
@@ -665,6 +844,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                                     bgcolor: isPlaying ? theme.palette.primary.main : 'transparent',
                                                     color: isPlaying ? 'white' : theme.palette.primary.main,
                                                     borderColor: theme.palette.primary.main,
+                                                    transform: 'scale(1.1)',
                                                     '&:hover': {
                                                         bgcolor: isPlaying ? theme.palette.primary.dark : alpha(theme.palette.primary.main, 0.1)
                                                     }
@@ -705,7 +885,15 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                             size="small"
                                             inputProps={{ step: 0.1, min: 0, max: duration }}
                                             InputProps={{
-                                                endAdornment: <InputAdornment position="end">s</InputAdornment>,
+                                                endAdornment: (
+                                                    <InputAdornment position="end">
+                                                        <Tooltip title="Set start to current time">
+                                                            <IconButton onClick={handleSetStartTime} disabled={disabled} size="small">
+                                                                <SetStartIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </InputAdornment>
+                                                )
                                             }}
                                             sx={{
                                                 minWidth: 120,
@@ -729,7 +917,15 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
                                             size="small"
                                             inputProps={{ step: 0.1, min: 0, max: duration }}
                                             InputProps={{
-                                                endAdornment: <InputAdornment position="end">s</InputAdornment>,
+                                                endAdornment: (
+                                                    <InputAdornment position="end">
+                                                        <Tooltip title="Set end to current time">
+                                                            <IconButton onClick={handleSetEndTime} disabled={disabled} size="small">
+                                                                <SetEndIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </InputAdornment>
+                                                )
                                             }}
                                             sx={{
                                                 minWidth: 120,
