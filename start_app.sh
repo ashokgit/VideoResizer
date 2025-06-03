@@ -49,7 +49,7 @@ if docker-compose up --build -d; then
     echo "======================================================"
     echo ""
     echo "🌐 Access your application:"
-    echo "   Frontend (React UI): http://localhost:3000"
+    echo "   Frontend (React UI): http://localhost:3005"
     echo "   Backend API:         http://localhost:5001/api/health"
     echo ""
     echo "📱 Features available:"
@@ -82,14 +82,14 @@ if docker-compose up --build -d; then
         echo "⚠️  Backend API might still be starting..."
     fi
     
-    if curl -s http://localhost:3000 > /dev/null 2>&1; then
+    if curl -s http://localhost:3005 > /dev/null 2>&1; then
         echo "✅ Frontend is ready!"
     else
         echo "⚠️  Frontend might still be starting..."
     fi
     
     echo ""
-    echo "🎉 Ready to process videos! Open http://localhost:3000 in your browser."
+    echo "🎉 Ready to process videos! Open http://localhost:3005 in your browser."
     echo ""
     
     # Option to view logs
@@ -107,7 +107,7 @@ else
     echo ""
     echo "🛠️ Troubleshooting:"
     echo "   • Ensure Docker has enough memory (8GB+ recommended)"
-    echo "   • Check if ports 3000 and 5001 are available"
+    echo "   • Check if ports 3005 and 5001 are available"
     echo "   • Try: docker system prune -a (removes all unused Docker data)"
     echo ""
     exit 1

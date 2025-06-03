@@ -17,7 +17,7 @@ A modern, full-stack video processing application with a React frontend and Flas
 ```
 ┌─────────────────┐    ┌─────────────────┐
 │  React Frontend │    │  Flask Backend  │
-│  (Port 3000)    │◄──►│  (Port 5001)    │
+│  (Port 3005)    │◄──►│  (Port 5001)    │
 │  - Material-UI  │    │  - Video Proc.  │
 │  - TypeScript   │    │  - REST API     │
 │  - Nginx        │    │  - File Upload  │
@@ -42,7 +42,7 @@ docker-compose up --build
 
 ### 2. Access the Application
 
-- **Frontend**: http://localhost:3000
+- **Frontend**: http://localhost:3005
 - **Backend API**: http://localhost:5001/api/health
 
 ### 3. Start Processing Videos!
@@ -167,7 +167,7 @@ backend:
 frontend:
   build: ./frontend
   ports:
-    - "3000:80"
+    - "3005:80"
   depends_on:
     - backend
   environment:

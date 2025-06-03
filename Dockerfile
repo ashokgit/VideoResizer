@@ -39,5 +39,14 @@ EXPOSE 5001
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
   CMD python -c "import requests; requests.get('http://localhost:5001/api/health')" || exit 1
 
-# Run the application
+# Add support for dev mode
+ARG DEV_MODE=false
+ENV DEV_MODE=${DEV_MODE}
+
+# Install watchdog for hot reload (dev only)
+RUN pip install --no-cache-dir watchdog
+
+# Default: production
 CMD ["python", "app.py"]
+# For development, override CMD in docker-compose:
+#   command: python -m flask run --host=0.0.0.0 --port=5001 --reload

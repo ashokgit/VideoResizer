@@ -17,7 +17,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM nginx:alpine as production
 
 # Copy built app from builder stage
 COPY --from=builder /app/build /usr/share/nginx/html
@@ -32,5 +32,32 @@ RUN mkdir -p /var/cache/nginx/client_temp && \
 # Expose port
 EXPOSE 80
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+# Default: production (nginx)
+CMD ["nginx", "-g", "daemon off;"]
+
+# Development stage
+FROM node:18-alpine as development
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 3005
+
+# Development command
+CMD ["npm", "start"]
+
+# Final stage selection
+ARG DEV_MODE=false
+ENV DEV_MODE=${DEV_MODE}
+
+FROM development 
