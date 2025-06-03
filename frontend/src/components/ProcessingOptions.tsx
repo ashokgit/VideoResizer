@@ -250,36 +250,7 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
                     }
                 }}
             >
-                <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                        <Box sx={{
-                            p: 2,
-                            borderRadius: 3,
-                            background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
-                            color: 'white',
-                            boxShadow: `0 8px 24px ${alpha(theme.palette.primary.main, 0.3)}`
-                        }}>
-                            <SettingsIcon sx={{ fontSize: 32 }} />
-                        </Box>
-                        <Box sx={{ flex: 1 }}>
-                            <Typography variant="h4" fontWeight="bold" color="text.primary" sx={{ mb: 1 }}>
-                                Processing Options
-                            </Typography>
-                            <Typography variant="body1" color="text.secondary">
-                                Configure your video processing settings with precision and ease
-                            </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Chip
-                                icon={<VideoSettingsIcon />}
-                                label="Video Editor"
-                                color="primary"
-                                variant="outlined"
-                                sx={{ fontWeight: 'bold' }}
-                            />
-                        </Box>
-                    </Box>
-                </CardContent>
+
             </Card>
 
             {/* Time Cropping Section */}
