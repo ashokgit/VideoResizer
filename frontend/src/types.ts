@@ -51,4 +51,25 @@ export interface ApiError {
 export interface AspectRatioOption {
     label: string;
     value: [number, number] | 'custom';
+}
+
+export interface PreviewRequest {
+    main_video_id: string;
+    target_ratio: {
+        width: number;
+        height: number;
+    };
+    resize_method?: 'crop' | 'pad' | 'stretch';
+    pad_color?: [number, number, number];
+    blur_background?: boolean;
+    blur_strength?: number;
+    gradient_blend?: number;
+    enable_time_crop?: boolean;
+    start_time?: number;
+}
+
+export interface PreviewResponse {
+    success: boolean;
+    preview_file_id: string;
+    message: string;
 } 

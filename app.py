@@ -691,6 +691,105 @@ def cleanup_files():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/aspect-ratio-preview', methods=['POST'])
+def generate_aspect_ratio_preview():
+    """Generate a preview image showing what the aspect ratio conversion will look like."""
+    try:
+        logging.info("=== ASPECT RATIO PREVIEW REQUEST START ===")
+        
+        # Get request data
+        data = request.get_json()
+        logging.info(f"Preview request data: {json.dumps(data, indent=2)}")
+        
+        # Extract required parameters
+        main_video_id = data.get('main_video_id')
+        if not main_video_id:
+            return jsonify({'error': 'main_video_id is required'}), 400
+        
+        # Get main video file path
+        main_video_path = os.path.join(UPLOAD_FOLDER, main_video_id)
+        if not main_video_path or not os.path.exists(main_video_path):
+            return jsonify({'error': 'Main video file not found'}), 404
+        
+        logging.info(f"Main video path: {main_video_path}")
+        
+        # Extract aspect ratio parameters
+        target_ratio_data = data.get('target_ratio')
+        if not target_ratio_data:
+            return jsonify({'error': 'target_ratio is required'}), 400
+        
+        target_ratio = (target_ratio_data.get('width', 9), target_ratio_data.get('height', 16))
+        resize_method = data.get('resize_method', 'crop')
+        pad_color = data.get('pad_color', [0, 0, 0])
+        blur_background = data.get('blur_background', False)
+        blur_strength = data.get('blur_strength', 25)
+        gradient_blend = data.get('gradient_blend', 0.3)
+        
+        # Handle time cropping for frame selection
+        enable_time_crop = data.get('enable_time_crop', False)
+        start_time = data.get('start_time')
+        frame_time = None
+        
+        if enable_time_crop and start_time is not None:
+            # Use start time of crop if time cropping is enabled
+            frame_time = float(start_time)
+            logging.info(f"Using start frame from time crop: {frame_time}s")
+        else:
+            # Use middle of video if no time cropping
+            logging.info("Using middle frame (no time cropping specified)")
+        
+        logging.info(f"Preview parameters:")
+        logging.info(f"  Target ratio: {target_ratio}")
+        logging.info(f"  Resize method: {resize_method}")
+        logging.info(f"  Blur background: {blur_background}")
+        if blur_background:
+            logging.info(f"  Blur strength: {blur_strength}")
+            logging.info(f"  Gradient blend: {gradient_blend}")
+        logging.info(f"  Frame time: {frame_time}")
+        
+        # Generate preview filename
+        preview_filename = f"preview_{uuid.uuid4().hex[:8]}.png"
+        preview_path = os.path.join(OUTPUT_FOLDER, preview_filename)
+        
+        logging.info(f"Preview output path: {preview_path}")
+        
+        # Initialize processor and generate preview
+        processor = VideoProcessor()
+        
+        success = processor.generate_aspect_ratio_preview(
+            input_path=main_video_path,
+            output_path=preview_path,
+            target_ratio=target_ratio,
+            resize_method=resize_method,
+            pad_color=tuple(pad_color),
+            blur_background=blur_background,
+            blur_strength=blur_strength,
+            gradient_blend=gradient_blend,
+            frame_time=frame_time
+        )
+        
+        if not success:
+            logging.error("Preview generation failed")
+            return jsonify({'error': 'Preview generation failed'}), 500
+        
+        if not os.path.exists(preview_path):
+            logging.error(f"Preview file not created: {preview_path}")
+            return jsonify({'error': 'Preview file was not created'}), 500
+        
+        logging.info(f"Preview generated successfully: {preview_filename}")
+        logging.info("=== ASPECT RATIO PREVIEW REQUEST END ===")
+        
+        return jsonify({
+            'success': True,
+            'preview_file_id': preview_filename,
+            'message': 'Preview generated successfully'
+        })
+        
+    except Exception as e:
+        logging.error(f"Error generating aspect ratio preview: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': f'Preview generation failed: {str(e)}'}), 500
+
 # Error handlers
 @app.errorhandler(413)
 def file_too_large(e):

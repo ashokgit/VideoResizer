@@ -1,5 +1,5 @@
 import axios, { AxiosRequestConfig } from 'axios';
-import { UploadResponse, ProcessRequest, ProcessResponse, VideoInfo, ApiError } from './types';
+import { UploadResponse, ProcessRequest, ProcessResponse, VideoInfo, ApiError, PreviewRequest, PreviewResponse } from './types';
 
 declare global {
     interface Window {
@@ -132,6 +132,11 @@ export const downloadVideo = async (fileId: string): Promise<Blob> => {
     const response = await api.get<Blob>(`/download/${fileId}`, {
         responseType: 'blob',
     });
+    return response.data;
+};
+
+export const generateAspectRatioPreview = async (request: PreviewRequest): Promise<PreviewResponse> => {
+    const response = await api.post<PreviewResponse>('/aspect-ratio-preview', request);
     return response.data;
 };
 

@@ -8,6 +8,7 @@ import subprocess
 import json
 import time
 import logging
+import uuid
 
 class VideoProcessor:
     """
@@ -571,6 +572,113 @@ class VideoProcessor:
             print(f"🔴 PROCESS_VIDEO_COMPLETE RETURNING FALSE - EXCEPTION!")
             return False
     
+    def generate_aspect_ratio_preview(self,
+                                    input_path: str,
+                                    output_path: str,
+                                    target_ratio: Tuple[int, int] = (9, 16),
+                                    resize_method: Literal['crop', 'pad', 'stretch'] = 'crop',
+                                    pad_color: Tuple[int, int, int] = (0, 0, 0),
+                                    blur_background: bool = False,
+                                    blur_strength: int = 25,
+                                    gradient_blend: float = 0.3,
+                                    frame_time: Optional[float] = None) -> bool:
+        """
+        Generate a preview image showing what the aspect ratio conversion will look like.
+        
+        Args:
+            input_path: Path to input video file
+            output_path: Path for output preview image (PNG/JPG)
+            target_ratio: Target aspect ratio as (width, height) tuple
+            resize_method: Method to handle aspect ratio change ('crop', 'pad', 'stretch')
+            pad_color: RGB color for padding (only used if blur_background is False)
+            blur_background: If True and resize_method is 'pad', use blurred video as background
+            blur_strength: Strength of blur effect (1-50, default: 25)
+            gradient_blend: Gradient blending factor (0.0-1.0, default: 0.3)
+            frame_time: Specific time to extract frame from (seconds). If None, uses middle of video.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            from moviepy.editor import VideoFileClip
+            import os
+            
+            print(f"🖼️ Generating aspect ratio preview...")
+            print(f"📁 Input: {input_path}")
+            print(f"📐 Target ratio: {target_ratio[0]}:{target_ratio[1]}")
+            print(f"🔧 Method: {resize_method}")
+            print(f"🌫️ Blur background: {blur_background}")
+            if blur_background:
+                print(f"💫 Blur strength: {blur_strength}, Gradient blend: {gradient_blend}")
+            
+            # Validate input file
+            if not self._validate_input(input_path):
+                return False
+            
+            # Load video
+            clip = VideoFileClip(input_path)
+            
+            # Determine frame time
+            if frame_time is None:
+                # Use middle of video for preview
+                frame_time = clip.duration / 2
+                print(f"⏰ Using middle frame at {frame_time:.1f}s")
+            else:
+                # Clamp frame_time to valid range
+                frame_time = max(0, min(frame_time, clip.duration))
+                print(f"⏰ Using specified frame at {frame_time:.1f}s")
+            
+            # Extract single frame as ImageClip
+            frame_clip = clip.subclip(frame_time, frame_time + 0.1).to_ImageClip(duration=1)
+            original_width, original_height = frame_clip.size
+            original_ratio = original_width / original_height
+            target_ratio_decimal = target_ratio[0] / target_ratio[1]
+            
+            print(f"📏 Original dimensions: {original_width}x{original_height}")
+            print(f"📊 Original ratio: {original_ratio:.2f}, Target ratio: {target_ratio_decimal:.2f}")
+            
+            # Process frame based on resize method (reuse existing logic)
+            if resize_method == 'crop':
+                print(f"✂️ Applying crop preview...")
+                processed_frame = self._crop_to_ratio(frame_clip, target_ratio)
+            elif resize_method == 'pad':
+                print(f"📦 Applying pad preview...")
+                processed_frame = self._pad_to_ratio(frame_clip, target_ratio, pad_color, blur_background, blur_strength, gradient_blend)
+            elif resize_method == 'stretch':
+                print(f"↔️ Applying stretch preview...")
+                processed_frame = self._stretch_to_ratio(frame_clip, target_ratio)
+            else:
+                raise ValueError(f"Unsupported resize method: {resize_method}")
+            
+            # Ensure output directory exists
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Save the preview image
+            print(f"💾 Saving preview to: {output_path}")
+            
+            # Handle image format based on file extension
+            _, ext = os.path.splitext(output_path)
+            if ext.lower() in ['.jpg', '.jpeg']:
+                # Convert RGBA to RGB for JPEG compatibility
+                processed_frame.save_frame(output_path, t=0, logger=None)
+            else:
+                # PNG supports RGBA, save directly
+                processed_frame.save_frame(output_path, t=0)
+            
+            # Clean up
+            clip.close()
+            frame_clip.close()
+            processed_frame.close()
+            
+            print(f"✅ Preview generated successfully!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error generating preview: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def _crop_to_ratio(self, clip, target_ratio: Tuple[int, int]):
         """Crop video to target aspect ratio."""
         width, height = clip.size
