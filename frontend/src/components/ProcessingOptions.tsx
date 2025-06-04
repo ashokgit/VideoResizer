@@ -43,7 +43,8 @@ import {
 import { ChromePicker } from 'react-color';
 import VideoUpload from './VideoUpload';
 import VideoTimeline from './VideoTimeline';
-import { VideoInfo, ProcessRequest } from '../types';
+import AspectRatioPreview from './AspectRatioPreview';
+import { VideoInfo, ProcessRequest, PreviewRequest } from '../types';
 
 interface ProcessingOptionsProps {
     mainVideo: { fileId: string; info: VideoInfo; filename: string } | null;
@@ -234,9 +235,28 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
     };
 
     const handleWatermarkPositionChange = (event: SelectChangeEvent<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'>) => {
-        const value = event.target.value as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
-        setWatermarkPosition(value);
-        updateOptions({ watermark_position: value });
+        setWatermarkPosition(event.target.value as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center');
+        updateOptions({ watermark_position: event.target.value as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' });
+    };
+
+    // Helper function to create preview request
+    const createPreviewRequest = (): PreviewRequest => {
+        const currentPreset = ASPECT_RATIO_PRESETS[selectedRatioPreset];
+        const targetRatio = currentPreset.label === "Custom"
+            ? { width: customWidth, height: customHeight }
+            : { width: currentPreset.width, height: currentPreset.height };
+
+        return {
+            main_video_id: mainVideo?.fileId || '',
+            target_ratio: targetRatio,
+            resize_method: resizeMethod,
+            pad_color: padColor,
+            blur_background: blurBackground,
+            blur_strength: blurStrength,
+            gradient_blend: gradientBlend,
+            enable_time_crop: enableTimeCrop,
+            start_time: startTime
+        };
     };
 
     return (
@@ -828,6 +848,17 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
                     </Fade>
                 </CardContent>
             </Card>
+
+            {/* Aspect Ratio Preview Section */}
+            {mainVideo && (
+                <Box sx={{ mb: 4 }}>
+                    <AspectRatioPreview
+                        mainVideoId={mainVideo.fileId}
+                        previewRequest={createPreviewRequest()}
+                        enabled={enableRatioChange}
+                    />
+                </Box>
+            )}
 
             {/* CTA Video Section */}
             <Card
