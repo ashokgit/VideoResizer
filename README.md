@@ -134,7 +134,10 @@ curl -X POST http://localhost:5001/api/process \
 
 - **Crop**: Maintains video quality but may lose some content
 - **Pad**: Adds letterbox/pillarbox bars to maintain full content
+  - **🌫️ Blurred Background**: NEW! Use a blurred version of your video as background instead of solid color for a cinematic effect
 - **Stretch**: Fits entire video but may cause distortion
+
+**Note:** The blurred background feature only works when converting between different aspect ratios that require padding (letterboxing/pillarboxing).
 
 ### Quality Presets
 

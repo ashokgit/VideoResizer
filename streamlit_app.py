@@ -562,7 +562,7 @@ Debug Info for Backend Processing:
             enable_ratio_change = st.checkbox("Enable aspect ratio conversion")
             target_ratio = None
             resize_method = 'crop'
-            pad_color = (0, 0, 0)
+            pad_color = (0, 0, 0)  # Default black
             
             if enable_ratio_change:
                 # Preset ratios
@@ -594,11 +594,49 @@ Debug Info for Backend Processing:
                     help="Crop: May lose content but maintains quality\nPad: Adds letterbox/pillarbox\nStretch: May cause distortion"
                 )
                 
-                # Padding color (only for pad method)
+                # Letterbox options (only for pad method)
+                blur_background = False
+                
                 if resize_method == "pad":
-                    pad_color_hex = st.color_picker("Padding color", "#000000")
-                    # Convert hex to RGB
-                    pad_color = tuple(int(pad_color_hex[i:i+2], 16) for i in (1, 3, 5))
+                    st.markdown("**🎬 Letterbox Options**")
+                    
+                    # Blur background toggle
+                    blur_background = st.checkbox(
+                        "🌫️ Use blurred background", 
+                        value=False,
+                        help="Creates a cinematic effect by using a blurred version of your video as background instead of solid color"
+                    )
+                    
+                    if blur_background:
+                        st.info("✨ **Blurred background enabled!** This creates a professional cinematic effect perfect for social media platforms.")
+                        
+                        # Check if current and target aspect ratios match
+                        if st.session_state.main_video_info:
+                            current_w, current_h = st.session_state.main_video_info['size']
+                            current_ratio = current_w / current_h
+                            target_ratio_decimal = target_ratio[0] / target_ratio[1] if target_ratio else 1.0
+                            
+                            st.write("**🔍 Aspect Ratio Check:**")
+                            col_curr, col_targ = st.columns(2)
+                            with col_curr:
+                                st.write(f"**Current:** {current_w}×{current_h} ({current_ratio:.2f}:1)")
+                            with col_targ:
+                                st.write(f"**Target:** {target_ratio[0]}:{target_ratio[1]} ({target_ratio_decimal:.2f}:1)")
+                            
+                            if abs(current_ratio - target_ratio_decimal) < 0.01:
+                                st.warning("⚠️ **Same Aspect Ratio:** Your video is already in the target aspect ratio. No padding will be added, so the blur effect won't be applied.")
+                                st.info("💡 **Try:** Convert to 9:16 (portrait) or 1:1 (square) to see the blur effect!")
+                            else:
+                                st.success("✅ **Perfect!** Aspect ratios are different. Blur background effect will be applied during letterboxing.")
+                    else:
+                        # Only show color picker if blur background is disabled
+                        pad_color_hex = st.color_picker("Padding color", "#000000")
+                        # Convert hex to RGB
+                        pad_color = tuple(int(pad_color_hex[i:i+2], 16) for i in (1, 3, 5))
+                else:
+                    # Ensure variables are defined even when not using pad method
+                    blur_background = False
+                    pad_color = (0, 0, 0)
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -705,6 +743,7 @@ Debug Info for Backend Processing:
                             target_ratio=target_ratio if enable_ratio_change else None,
                             resize_method=resize_method,
                             pad_color=pad_color,
+                            blur_background=blur_background if enable_ratio_change and resize_method == "pad" else False,
                             quality_preset=quality_preset
                         )
                     

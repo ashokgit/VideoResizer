@@ -15,6 +15,14 @@ import threading
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
+# Suppress noisy watchdog logs
+logging.getLogger('watchdog.observers.inotify_buffer').setLevel(logging.WARNING)
+logging.getLogger('watchdog').setLevel(logging.WARNING)
+
+# Also suppress other potentially noisy logs
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('requests').setLevel(logging.WARNING)
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
@@ -449,6 +457,9 @@ def process_video():
         target_ratio_data = data.get('target_ratio')
         resize_method = data.get('resize_method', 'crop')
         pad_color_hex = data.get('pad_color', '#000000')
+        blur_background = data.get('blur_background', False)
+        blur_strength = data.get('blur_strength', 25)
+        gradient_blend = data.get('gradient_blend', 0.3)
         enable_cta = data.get('enable_cta', False)
         cta_video_id = data.get('cta_video_id')
         quality_preset = data.get('quality_preset', 'high')
@@ -459,6 +470,9 @@ def process_video():
         logging.info(f"Enable ratio change: {enable_ratio_change}")
         logging.info(f"Target ratio data: {target_ratio_data}")
         logging.info(f"Resize method: {resize_method}")
+        logging.info(f"Blur background: {blur_background}")
+        logging.info(f"Blur strength: {blur_strength}")
+        logging.info(f"Gradient blend: {gradient_blend}")
         logging.info(f"Enable CTA: {enable_cta}")
         logging.info(f"CTA video ID: {cta_video_id}")
         logging.info(f"Quality preset: {quality_preset}")
@@ -544,6 +558,9 @@ def process_video():
                     target_ratio=target_ratio,
                     resize_method=resize_method,
                     pad_color=pad_color,
+                    blur_background=blur_background,
+                    blur_strength=blur_strength,
+                    gradient_blend=gradient_blend,
                     quality_preset=quality_preset,
                     watermark_path=watermark_path,
                     watermark_position=watermark_position

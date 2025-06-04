@@ -27,6 +27,9 @@ export interface ProcessRequest {
     };
     resize_method?: 'crop' | 'pad' | 'stretch';
     pad_color?: [number, number, number];
+    blur_background?: boolean;
+    blur_strength?: number;
+    gradient_blend?: number;
     enable_cta?: boolean;
     cta_video_id?: string;
     quality_preset?: 'lossless' | 'high' | 'medium' | 'low';

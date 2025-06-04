@@ -18,6 +18,8 @@ def main():
                        default='crop', help='Resize method')
     parser.add_argument('--pad-color', default='0,0,0', 
                        help='Padding color as R,G,B (e.g., 0,0,0 for black)')
+    parser.add_argument('--blur-background', action='store_true',
+                       help='Use blurred video background instead of solid color (only for pad method)')
     parser.add_argument('--quality', '-q', choices=['lossless', 'high', 'medium', 'low'],
                        default='high', help='Video quality preset')
     parser.add_argument('--info', action='store_true', help='Show video info only')
@@ -70,6 +72,7 @@ def main():
         target_ratio=target_ratio,
         resize_method=args.method,
         pad_color=pad_color,
+        blur_background=args.blur_background,
         quality_preset=args.quality
     )
     

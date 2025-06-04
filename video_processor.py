@@ -98,6 +98,9 @@ class VideoProcessor:
                            target_ratio: Tuple[int, int] = (9, 16),
                            resize_method: Literal['crop', 'pad', 'stretch'] = 'crop',
                            pad_color: Tuple[int, int, int] = (0, 0, 0),
+                           blur_background: bool = False,
+                           blur_strength: int = 25,
+                           gradient_blend: float = 0.3,
                            quality_preset: Optional[str] = None) -> bool:
         """
         Resize video from one aspect ratio to another.
@@ -110,7 +113,10 @@ class VideoProcessor:
                 - 'crop': Crop the video to fit new ratio
                 - 'pad': Add padding (letterbox/pillarbox) to fit new ratio
                 - 'stretch': Stretch video to new ratio (may distort)
-            pad_color: RGB color for padding (default: black)
+            pad_color: RGB color for padding (default: black) - only used if blur_background is False
+            blur_background: If True and resize_method is 'pad', use blurred video as background instead of solid color
+            blur_strength: Strength of blur effect (1-50, default: 25) - higher values = more blur
+            gradient_blend: Gradient blending factor (0.0-1.0, default: 0.3) - controls bleeding effect transparency
             quality_preset: Override quality preset ('lossless', 'high', 'medium', 'low')
         
         Returns:
@@ -121,6 +127,7 @@ class VideoProcessor:
             if not self._validate_input(input_path):
                 return False
             
+            print(f"🎬 Starting video processing...")
             # Load video
             clip = VideoFileClip(input_path)
             original_width, original_height = clip.size
@@ -133,22 +140,54 @@ class VideoProcessor:
             print(f"Quality preset: {quality_preset or self.quality_preset}")
             
             # Process based on resize method
+            print(f"🔄 Processing video using {resize_method} method...")
             if resize_method == 'crop':
                 processed_clip = self._crop_to_ratio(clip, target_ratio)
             elif resize_method == 'pad':
-                processed_clip = self._pad_to_ratio(clip, target_ratio, pad_color)
+                processed_clip = self._pad_to_ratio(clip, target_ratio, pad_color, blur_background, blur_strength, gradient_blend)
             elif resize_method == 'stretch':
                 processed_clip = self._stretch_to_ratio(clip, target_ratio)
             else:
                 raise ValueError(f"Unsupported resize method: {resize_method}")
             
+            print(f"✅ Video processing completed. Starting video export...")
+            
             # Get encoding parameters
             encoding_params = self.get_encoding_params(quality_preset)
             
-            # Write output with quality settings
-            processed_clip.write_videofile(output_path, **encoding_params)
+            # Add progress callback for debugging
+            def progress_callback(t):
+                if hasattr(progress_callback, 'last_print') and t - progress_callback.last_print < 5:
+                    return  # Only print every 5 seconds
+                progress_callback.last_print = t
+                print(f"⏳ Encoding progress: {t:.1f}s processed...")
+            
+            progress_callback.last_print = 0
+            
+            # Write output with quality settings and progress tracking
+            print(f"💾 Writing video file: {output_path}")
+            print(f"📝 Encoding parameters: {encoding_params}")
+            
+            # Remove conflicting parameters and set our preferred values
+            encoding_params_clean = encoding_params.copy()
+            encoding_params_clean['verbose'] = True     # Enable verbose output for debugging
+            encoding_params_clean['logger'] = 'bar'     # Use bar logger for progress
+            
+            try:
+                processed_clip.write_videofile(
+                    output_path, 
+                    **encoding_params_clean
+                )
+                print(f"✅ Video file written successfully!")
+            except Exception as write_error:
+                print(f"❌ Error during video writing: {str(write_error)}")
+                print(f"🔍 Write error type: {type(write_error).__name__}")
+                import traceback
+                traceback.print_exc()
+                raise write_error
             
             # Clean up
+            print(f"🧹 Cleaning up video clips...")
             clip.close()
             processed_clip.close()
             
@@ -157,6 +196,9 @@ class VideoProcessor:
             
         except Exception as e:
             print(f"Error processing video: {str(e)}")
+            print(f"🔍 Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def crop_video_by_time(self, 
@@ -371,12 +413,15 @@ class VideoProcessor:
                              target_ratio: Optional[Tuple[int, int]] = None,
                              resize_method: Literal['crop', 'pad', 'stretch'] = 'crop',
                              pad_color: Tuple[int, int, int] = (0, 0, 0),
+                             blur_background: bool = False,
+                             blur_strength: int = 25,
+                             gradient_blend: float = 0.3,
                              quality_preset: Optional[str] = None,
                              watermark_path: Optional[str] = None,
                              watermark_position: Optional[str] = None) -> bool:
         """
         Complete video processing pipeline with improved CTA video handling and memory optimization.
-        Now supports watermark overlay.
+        Now supports watermark overlay, blurred background with controllable blur strength and gradient bleeding effect.
         
         Args:
             input_path: Path to input video file
@@ -386,7 +431,10 @@ class VideoProcessor:
             end_time: Optional end time for cropping (in seconds)
             target_ratio: Optional target aspect ratio as (width, height) tuple
             resize_method: Method for aspect ratio change
-            pad_color: RGB color for padding
+            pad_color: RGB color for padding (only used if blur_background is False)
+            blur_background: If True and resize_method is 'pad', use blurred video as background
+            blur_strength: Strength of blur effect (1-50, default: 25) - higher values = more blur
+            gradient_blend: Gradient blending factor (0.0-1.0, default: 0.3) - controls bleeding effect transparency
             quality_preset: Override quality preset ('lossless', 'high', 'medium', 'low')
             watermark_path: Optional path to watermark image
             watermark_position: Optional position for watermark overlay
@@ -403,10 +451,13 @@ class VideoProcessor:
             print(f"End time received: {end_time} (type: {type(end_time)})")
             print(f"Target ratio: {target_ratio}")
             print(f"Resize method: {resize_method}")
+            print(f"Blur background: {blur_background}")
             print(f"Quality preset: {quality_preset or self.quality_preset}")
             print(f"Time cropping enabled: {start_time is not None and end_time is not None}")
             print(f"Watermark path: {watermark_path}")
             print(f"Watermark position: {watermark_position}")
+            print(f"Blur strength: {blur_strength}")
+            print(f"Gradient blend: {gradient_blend}")
             
             # Check video resolutions early for memory planning
             if cta_video_path:
@@ -438,8 +489,10 @@ class VideoProcessor:
                 # Step 2: Aspect ratio change if specified
                 if target_ratio is not None:
                     print(f"📐 STEP 2: Changing aspect ratio to {target_ratio[0]}:{target_ratio[1]} using {resize_method}")
+                    if blur_background and resize_method == 'pad':
+                        print(f"🌫️ Using blurred background for letterboxing")
                     temp_resized = os.path.join(temp_dir, "temp_resized.mp4")
-                    if not self.resize_aspect_ratio(current_file, temp_resized, target_ratio, resize_method, pad_color, quality_preset):
+                    if not self.resize_aspect_ratio(current_file, temp_resized, target_ratio, resize_method, pad_color, blur_background, blur_strength, gradient_blend, quality_preset):
                         return False
                     current_file = temp_resized
 
@@ -448,7 +501,7 @@ class VideoProcessor:
                         print(f"📐 STEP 2b: Resizing CTA video to match aspect ratio {target_ratio[0]}:{target_ratio[1]}")
                         temp_cta_resized = os.path.join(temp_dir, "temp_cta_resized.mp4")
                         try:
-                            if self.resize_aspect_ratio(processed_cta_path, temp_cta_resized, target_ratio, resize_method, pad_color, quality_preset):
+                            if self.resize_aspect_ratio(processed_cta_path, temp_cta_resized, target_ratio, resize_method, pad_color, blur_background, blur_strength, gradient_blend, quality_preset):
                                 processed_cta_path = temp_cta_resized
                                 print("✅ CTA video successfully resized")
                             else:
@@ -502,16 +555,20 @@ class VideoProcessor:
                 import shutil
                 shutil.copy2(current_file, output_path)
                 print(f"✅ Complete video processing finished. Output saved to: {output_path}")
+                print(f"🎉 PROCESS_VIDEO_COMPLETE RETURNING TRUE - SUCCESS!")
                 return True
                 
         except MemoryError:
             print("❌ Memory error: Videos too large for available RAM")
             print("💡 Try using lower resolution videos or increase system memory")
+            print(f"🔴 PROCESS_VIDEO_COMPLETE RETURNING FALSE - MEMORY ERROR!")
             return False
         except Exception as e:
             print(f"❌ Error in complete video processing: {str(e)}")
+            print(f"🔍 Exception type: {type(e).__name__}")
             import traceback
             traceback.print_exc()
+            print(f"🔴 PROCESS_VIDEO_COMPLETE RETURNING FALSE - EXCEPTION!")
             return False
     
     def _crop_to_ratio(self, clip, target_ratio: Tuple[int, int]):
@@ -535,7 +592,7 @@ class VideoProcessor:
             y2 = y_center + new_height // 2
             return clip.crop(y1=y1, y2=y2)
     
-    def _pad_to_ratio(self, clip, target_ratio: Tuple[int, int], pad_color: Tuple[int, int, int]):
+    def _pad_to_ratio(self, clip, target_ratio: Tuple[int, int], pad_color: Tuple[int, int, int], blur_background: bool, blur_strength: int = 25, gradient_blend: float = 0.3):
         """Add padding to video to achieve target aspect ratio."""
         from moviepy.editor import ColorClip, CompositeVideoClip
         
@@ -543,25 +600,50 @@ class VideoProcessor:
         target_ratio_decimal = target_ratio[0] / target_ratio[1]
         current_ratio = width / height
         
+        # Check if aspect ratios are already very close (within 0.01 tolerance)
+        if abs(current_ratio - target_ratio_decimal) < 0.01:
+            print(f"ℹ️ Aspect ratios already match (current: {current_ratio:.2f}, target: {target_ratio_decimal:.2f})")
+            if blur_background:
+                print(f"🌫️ Blur background requested but no padding needed - aspect ratios are already the same!")
+                print(f"💡 Tip: Try converting to a different aspect ratio to see the blur effect (e.g., 9:16 for portrait)")
+            print(f"✅ Returning original video without changes")
+            return clip
+        
         if current_ratio > target_ratio_decimal:
             # Video is wider, add top/bottom padding
             new_height = int(width / target_ratio_decimal)
+            # Ensure new_height is even
+            if new_height % 2 != 0:
+                new_height += 1
             pad_height = (new_height - height) // 2
-            background = ColorClip(
-                size=(width, new_height),
-                color=pad_color,
-                duration=clip.duration
-            )
+            print(f"📐 Adding top/bottom padding: {pad_height}px each side (final size: {width}x{new_height})")
+            if blur_background:
+                print(f"🌫️ Creating blurred background for letterboxing (blur: {blur_strength}, gradient: {gradient_blend})")
+                background = self._create_blurred_background(clip, (width, new_height), blur_strength, gradient_blend)
+            else:
+                background = ColorClip(
+                    size=(width, new_height),
+                    color=pad_color,
+                    duration=clip.duration
+                )
             return CompositeVideoClip([background, clip.set_position(('center', pad_height))])
         else:
             # Video is taller, add left/right padding
             new_width = int(height * target_ratio_decimal)
+            # Ensure new_width is even
+            if new_width % 2 != 0:
+                new_width += 1
             pad_width = (new_width - width) // 2
-            background = ColorClip(
-                size=(new_width, height),
-                color=pad_color,
-                duration=clip.duration
-            )
+            print(f"📐 Adding left/right padding: {pad_width}px each side (final size: {new_width}x{height})")
+            if blur_background:
+                print(f"🌫️ Creating blurred background for pillarboxing (blur: {blur_strength}, gradient: {gradient_blend})")
+                background = self._create_blurred_background(clip, (new_width, height), blur_strength, gradient_blend)
+            else:
+                background = ColorClip(
+                    size=(new_width, height),
+                    color=pad_color,
+                    duration=clip.duration
+                )
             return CompositeVideoClip([background, clip.set_position((pad_width, 'center'))])
     
     def _stretch_to_ratio(self, clip, target_ratio: Tuple[int, int]):
@@ -788,6 +870,289 @@ class VideoProcessor:
         """Placeholder for frame extraction functionality."""
         pass
 
+    def _apply_blur(self, clip, blur_radius):
+        """
+        Apply blur effect using a robust downscale-upscale method.
+        Optimized for performance with automatic scaling based on resolution.
+        
+        Args:
+            clip: Video clip to blur
+            blur_radius: Blur radius (higher = more blur)
+            
+        Returns:
+            Blurred video clip
+        """
+        try:
+            original_size = clip.size
+            width, height = original_size
+            total_pixels = width * height
+            
+            # Performance optimization: Adjust blur quality based on resolution
+            if total_pixels > 8294400:  # > 4K (3840x2160)
+                print(f"🚀 Ultra-high resolution detected ({width}x{height}) - using aggressive blur optimization")
+                blur_factor = max(4, blur_radius // 2)  # More aggressive downscaling for 4K+
+            elif total_pixels > 2073600:  # > 1920x1080
+                print(f"🚀 High resolution detected ({width}x{height}) - using optimized blur")
+                blur_factor = max(3, blur_radius // 3)  # Moderate optimization for high-res
+            else:
+                print(f"📐 Standard resolution ({width}x{height}) - using standard blur")
+                blur_factor = max(2, blur_radius // 4)  # Original algorithm for standard res
+            
+            # Calculate new size for blur effect
+            new_width = max(16, original_size[0] // blur_factor)  # Minimum 16 pixels wide
+            new_height = max(16, original_size[1] // blur_factor)  # Minimum 16 pixels tall
+            
+            # Ensure dimensions are even
+            new_width = new_width if new_width % 2 == 0 else new_width + 1
+            new_height = new_height if new_height % 2 == 0 else new_height + 1
+            
+            print(f"🔧 Blur optimization: {width}x{height} → {new_width}x{new_height} → {width}x{height} (factor: {blur_factor})")
+            
+            # Apply blur by downscaling then upscaling
+            blurred_clip = clip.resize((new_width, new_height)).resize(original_size)
+            
+            return blurred_clip
+            
+        except Exception as e:
+            print(f"Warning: Error applying blur effect: {str(e)}")
+            # Return original clip if blur fails
+            return clip
+
+    def _create_blurred_background(self, clip, target_size: Tuple[int, int], blur_strength: int = 25, gradient_blend: float = 0.3):
+        """
+        Create a blurred background from the original video that fills the target dimensions.
+        Now supports gradient blending for a bleeding effect.
+        
+        Args:
+            clip: Original video clip
+            target_size: Target dimensions (width, height) for the background
+            blur_strength: Strength of blur effect (1-50, higher = more blur)
+            gradient_blend: Gradient blending factor (0.0-1.0) - controls bleeding effect transparency
+            
+        Returns:
+            A blurred video clip that fills the target dimensions with optional gradient blend
+        """
+        try:
+            # Validate parameters
+            blur_strength = max(1, min(50, blur_strength))  # Clamp between 1-50
+            gradient_blend = max(0.0, min(1.0, gradient_blend))  # Clamp between 0.0-1.0
+            
+            print(f"🎨 Creating background with blur strength: {blur_strength}, gradient blend: {gradient_blend}")
+            
+            # Ensure target dimensions are even
+            target_width, target_height = target_size
+            if target_width % 2 != 0:
+                target_width += 1
+            if target_height % 2 != 0:
+                target_height += 1
+            target_size = (target_width, target_height)
+            
+            original_width, original_height = clip.size
+            
+            # Calculate scaling to fill the target dimensions completely
+            scale_x = target_width / original_width
+            scale_y = target_height / original_height
+            scale = max(scale_x, scale_y)  # Use the larger scale to ensure complete fill
+            
+            # Calculate new dimensions after scaling
+            scaled_width = int(original_width * scale)
+            scaled_height = int(original_height * scale)
+            
+            # Ensure scaled dimensions are even
+            if scaled_width % 2 != 0:
+                scaled_width += 1
+            if scaled_height % 2 != 0:
+                scaled_height += 1
+            
+            print(f"🔧 Blur background: scaling from {original_width}x{original_height} to {scaled_width}x{scaled_height}, target: {target_width}x{target_height}")
+            
+            # Resize the clip to fill the background
+            scaled_clip = clip.resize((scaled_width, scaled_height))
+            
+            # If the scaled clip is larger than target, crop it to center
+            if scaled_width > target_width or scaled_height > target_height:
+                x_center = scaled_width // 2
+                y_center = scaled_height // 2
+                x1 = x_center - target_width // 2
+                y1 = y_center - target_height // 2
+                x2 = x1 + target_width
+                y2 = y1 + target_height
+                
+                # Ensure coordinates are within bounds
+                x1 = max(0, x1)
+                y1 = max(0, y1)
+                x2 = min(scaled_width, x2)
+                y2 = min(scaled_height, y2)
+                
+                print(f"🔧 Cropping scaled background: ({x1}, {y1}) to ({x2}, {y2})")
+                scaled_clip = scaled_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
+            
+            # Apply blur effect with user-controlled strength
+            blurred_clip = self._apply_blur(scaled_clip, blur_strength)
+            
+            # Apply gradient blend effect if requested
+            if gradient_blend > 0.0:
+                print(f"🌈 Applying gradient blend effect (strength: {gradient_blend})")
+                blurred_clip = self._apply_gradient_blend(blurred_clip, gradient_blend)
+            
+            # Try to apply a subtle dim effect to make the main content stand out more
+            try:
+                # Reduce brightness slightly for better contrast with main video
+                dimmed_clip = blurred_clip.fl_image(lambda image: (image * 0.8).astype('uint8'))
+                print(f"✅ Blur background created successfully with dimming effect")
+                return dimmed_clip
+            except Exception as dim_error:
+                print(f"⚠️ Dimming effect failed, using regular blur: {dim_error}")
+                # If color multiplication doesn't work, use the regular blurred clip
+                print(f"✅ Blur background created successfully without dimming")
+                return blurred_clip
+            
+        except Exception as e:
+            print(f"❌ Error creating blurred background: {str(e)}")
+            # Fallback to a simple dark background that should work
+            from moviepy.editor import ColorClip
+            print(f"🔄 Falling back to solid dark background")
+            return ColorClip(size=target_size, color=(32, 32, 32), duration=clip.duration)
+
+    def _apply_gradient_blend(self, clip, gradient_strength: float):
+        """
+        Apply a gradient blend effect to create a bleeding/vignette effect.
+        Optimized for performance with automatic quality scaling based on resolution.
+        
+        Args:
+            clip: Video clip to apply gradient to
+            gradient_strength: Strength of gradient effect (0.0-1.0)
+            
+        Returns:
+            Video clip with gradient blend applied
+        """
+        try:
+            width, height = clip.size
+            total_pixels = width * height
+            
+            # Performance optimization: Skip gradient for very high resolutions or very low strength
+            if gradient_strength < 0.05:
+                print(f"⏭️ Skipping gradient blend (strength too low: {gradient_strength})")
+                return clip
+                
+            # Automatic quality scaling based on resolution
+            if total_pixels > 2073600:  # > 1920x1080
+                print(f"🚀 High resolution detected ({width}x{height}) - using fast gradient mode")
+                return self._apply_fast_gradient_blend(clip, gradient_strength)
+            else:
+                print(f"🎨 Standard resolution ({width}x{height}) - using full quality gradient")
+                return self._apply_standard_gradient_blend(clip, gradient_strength)
+            
+        except Exception as e:
+            print(f"⚠️ Error applying gradient blend: {str(e)}")
+            # Return original clip if gradient fails
+            return clip
+
+    def _apply_fast_gradient_blend(self, clip, gradient_strength: float):
+        """
+        Fast gradient blend for high-resolution videos using downscaling technique.
+        """
+        try:
+            width, height = clip.size
+            
+            # Use a simplified radial gradient that's much faster
+            import numpy as np
+            
+            # Create a smaller gradient mask for performance (max 720p equivalent)
+            mask_width = min(width, 1280)
+            mask_height = min(height, 720)
+            
+            # Calculate center coordinates for the mask
+            center_x, center_y = mask_width // 2, mask_height // 2
+            max_distance = np.sqrt((mask_width/2)**2 + (mask_height/2)**2)
+            
+            # Create coordinate grids for the mask
+            y, x = np.ogrid[:mask_height, :mask_width]
+            distance_from_center = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+            normalized_distance = distance_from_center / max_distance
+            
+            # Create a simple radial gradient (faster than sigmoid)
+            gradient_mask = np.clip(gradient_strength * normalized_distance, 0.0, gradient_strength)
+            
+            # If mask size is different from video size, we'll scale it during application
+            def apply_fast_gradient_to_frame(frame):
+                """Apply fast gradient mask to a single frame"""
+                frame_float = frame.astype(np.float32)
+                
+                # If mask size doesn't match frame size, resize the mask
+                if gradient_mask.shape != (frame.shape[0], frame.shape[1]):
+                    try:
+                        from scipy.ndimage import zoom
+                        scale_y = frame.shape[0] / gradient_mask.shape[0]
+                        scale_x = frame.shape[1] / gradient_mask.shape[1]
+                        resized_mask = zoom(gradient_mask, (scale_y, scale_x), order=1)  # Linear interpolation
+                    except ImportError:
+                        # Fallback: use simple numpy resize (less precise but faster)
+                        print(f"⚠️ SciPy not available, using numpy resize fallback")
+                        from numpy import interp
+                        # Simple linear interpolation fallback
+                        h_ratio = frame.shape[0] / gradient_mask.shape[0]
+                        w_ratio = frame.shape[1] / gradient_mask.shape[1]
+                        if h_ratio != 1.0 or w_ratio != 1.0:
+                            # For performance, just use the smaller mask and tile it
+                            resized_mask = np.tile(gradient_mask, (int(h_ratio) + 1, int(w_ratio) + 1))[:frame.shape[0], :frame.shape[1]]
+                        else:
+                            resized_mask = gradient_mask
+                else:
+                    resized_mask = gradient_mask
+                
+                # Convert to 3-channel mask
+                gradient_mask_3d = np.stack([resized_mask] * 3, axis=-1)
+                
+                # Apply gradient: simple multiplication (faster than complex blending)
+                modified_frame = frame_float * (1.0 - gradient_mask_3d * 0.5)  # Less aggressive for speed
+                
+                return np.clip(modified_frame, 0, 255).astype(np.uint8)
+            
+            print(f"🚀 Fast gradient applied: {mask_width}x{mask_height} mask → {width}x{height} video")
+            return clip.fl_image(apply_fast_gradient_to_frame)
+            
+        except Exception as e:
+            print(f"⚠️ Fast gradient failed, using no gradient: {str(e)}")
+            return clip
+
+    def _apply_standard_gradient_blend(self, clip, gradient_strength: float):
+        """
+        Standard quality gradient blend for normal resolution videos.
+        """
+        try:
+            width, height = clip.size
+            
+            # Create a gradient mask using numpy
+            import numpy as np
+            
+            # Pre-compute the gradient mask once (major performance improvement)
+            y, x = np.ogrid[:height, :width]
+            center_x, center_y = width // 2, height // 2
+            max_distance = np.sqrt((width/2)**2 + (height/2)**2)
+            distance_from_center = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+            normalized_distance = distance_from_center / max_distance
+            
+            # Use a simpler gradient function (faster than sigmoid)
+            gradient_mask = np.clip(gradient_strength * normalized_distance**1.5, 0.0, gradient_strength)
+            gradient_mask_3d = np.stack([gradient_mask] * 3, axis=-1)
+            
+            def apply_standard_gradient_to_frame(frame):
+                """Apply standard gradient mask to a single frame"""
+                frame_float = frame.astype(np.float32)
+                
+                # Apply gradient with optimized calculation
+                modified_frame = frame_float * (1.0 - gradient_mask_3d * 0.7)
+                
+                return np.clip(modified_frame, 0, 255).astype(np.uint8)
+            
+            print(f"🎨 Standard gradient applied: {width}x{height} (strength: {gradient_strength})")
+            return clip.fl_image(apply_standard_gradient_to_frame)
+            
+        except Exception as e:
+            print(f"⚠️ Standard gradient failed, using no gradient: {str(e)}")
+            return clip
+
 
 # Example usage
 if __name__ == "__main__":
@@ -812,7 +1177,32 @@ if __name__ == "__main__":
         output_path=output_file_padded,
         target_ratio=(9, 16),
         resize_method='pad',
-        pad_color=(255, 255, 255)  # White padding
+        pad_color=(255, 255, 255),  # White padding
+        blur_background=False
+    )
+    
+    # Method 3: Add padding with blurred background (cinematic effect)
+    output_file_blurred = "output_video_9_16_blurred.mp4"
+    success = processor.resize_aspect_ratio(
+        input_path=input_file,
+        output_path=output_file_blurred,
+        target_ratio=(9, 16),
+        resize_method='pad',
+        blur_background=True,  # Use blurred background instead of solid color
+        blur_strength=30,      # Strong blur effect (1-50)
+        gradient_blend=0.4     # Moderate gradient bleeding effect (0.0-1.0)
+    )
+    
+    # Method 4: Add padding with custom blur and gradient settings
+    output_file_custom = "output_video_9_16_custom.mp4"
+    success = processor.resize_aspect_ratio(
+        input_path=input_file,
+        output_path=output_file_custom,
+        target_ratio=(9, 16),
+        resize_method='pad',
+        blur_background=True,
+        blur_strength=15,      # Lighter blur effect
+        gradient_blend=0.6     # Strong gradient bleeding effect for artistic look
     )
     
     # Get video information

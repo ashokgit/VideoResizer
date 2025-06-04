@@ -24,7 +24,9 @@ import {
     Fade,
     useTheme,
     alpha,
-    Badge
+    Badge,
+    Alert,
+    Slider
 } from '@mui/material';
 import {
     Settings as SettingsIcon,
@@ -114,6 +116,9 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
     const [customHeight, setCustomHeight] = useState(9);
     const [resizeMethod, setResizeMethod] = useState<'crop' | 'pad' | 'stretch'>('crop');
     const [padColor, setPadColor] = useState<[number, number, number]>([0, 0, 0]);
+    const [blurBackground, setBlurBackground] = useState(false);
+    const [blurStrength, setBlurStrength] = useState(25);
+    const [gradientBlend, setGradientBlend] = useState(0.3);
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [ctaVideo, setCtaVideo] = useState<{ fileId: string; info: VideoInfo; filename: string } | null>(null);
 
@@ -137,6 +142,9 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
             target_ratio: enableRatioChange ? targetRatio : undefined,
             resize_method: resizeMethod,
             pad_color: padColor,
+            blur_background: blurBackground,
+            blur_strength: blurStrength,
+            gradient_blend: gradientBlend,
             cta_video_id: ctaVideo?.fileId,
             quality_preset: qualityPreset,
             watermark_file: watermarkFile,
@@ -179,6 +187,10 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
 
     const handleResizeMethodChange = (method: 'crop' | 'pad' | 'stretch') => {
         setResizeMethod(method);
+        // Reset blur background when not using pad method
+        if (method !== 'pad') {
+            setBlurBackground(false);
+        }
         updateOptions({ resize_method: method });
     };
 
@@ -607,50 +619,204 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
                                         ))}
                                     </Grid>
 
-                                    {/* Enhanced Pad Color Picker */}
+                                    {/* Enhanced Pad Options */}
                                     {resizeMethod === 'pad' && (
                                         <Fade in={true}>
                                             <Card elevation={2} sx={{ p: 3, mb: 4, borderRadius: 2, background: alpha(theme.palette.info.main, 0.05) }}>
                                                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
-                                                    Padding Color
+                                                    Letterbox Options
                                                 </Typography>
-                                                <Stack direction="row" spacing={3} alignItems="center">
-                                                    <Box
-                                                        onClick={() => setShowColorPicker(!showColorPicker)}
-                                                        sx={{
-                                                            width: 60,
-                                                            height: 60,
-                                                            backgroundColor: `rgb(${padColor[0]}, ${padColor[1]}, ${padColor[2]})`,
-                                                            border: '3px solid white',
-                                                            borderRadius: 2,
-                                                            cursor: 'pointer',
-                                                            boxShadow: `0 4px 16px ${alpha(theme.palette.grey[900], 0.2)}`,
-                                                            transition: 'all 0.3s ease',
-                                                            '&:hover': {
-                                                                transform: 'scale(1.1)',
-                                                                boxShadow: `0 8px 24px ${alpha(theme.palette.grey[900], 0.3)}`
-                                                            }
-                                                        }}
-                                                    />
-                                                    <Box>
-                                                        <Typography variant="body1" fontWeight="bold">
-                                                            Click to change color
-                                                        </Typography>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            RGB: {padColor[0]}, {padColor[1]}, {padColor[2]}
-                                                        </Typography>
-                                                    </Box>
-                                                </Stack>
-                                                {showColorPicker && (
-                                                    <Box sx={{ mt: 3 }}>
-                                                        <ChromePicker
-                                                            color={{ r: padColor[0], g: padColor[1], b: padColor[2] }}
-                                                            onChange={(color) => {
-                                                                const newColor: [number, number, number] = [color.rgb.r, color.rgb.g, color.rgb.b];
-                                                                setPadColor(newColor);
-                                                                updateOptions({ pad_color: newColor });
+
+                                                {/* Blur Background Toggle */}
+                                                <Box sx={{ mb: 3 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                        <Box>
+                                                            <Typography variant="subtitle1" fontWeight="bold">
+                                                                🌫️ Blurred Background
+                                                            </Typography>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                Use a blurred version of your video as background instead of solid color
+                                                            </Typography>
+                                                        </Box>
+                                                        <Switch
+                                                            checked={blurBackground}
+                                                            onChange={(e) => {
+                                                                setBlurBackground(e.target.checked);
+                                                                updateOptions({ blur_background: e.target.checked });
+                                                            }}
+                                                            disabled={disabled}
+                                                            size="medium"
+                                                            sx={{
+                                                                '& .MuiSwitch-track': {
+                                                                    backgroundColor: blurBackground ? theme.palette.info.main : alpha(theme.palette.grey[400], 0.3)
+                                                                }
                                                             }}
                                                         />
+                                                    </Box>
+                                                    {blurBackground && (
+                                                        <Alert severity="info" sx={{ mt: 2 }}>
+                                                            <Typography variant="body2">
+                                                                <strong>Tip:</strong> The blurred background creates a professional cinematic effect,
+                                                                perfect for social media platforms like TikTok and Instagram Stories!
+                                                                <br /><br />
+                                                                <strong>Note:</strong> Blurred background only works when the source and target aspect ratios are different,
+                                                                requiring letterbox/pillarbox padding. If your video is already the target ratio, no padding will be added.
+                                                            </Typography>
+                                                        </Alert>
+                                                    )}
+
+                                                    {/* Blur Controls */}
+                                                    {blurBackground && (
+                                                        <Box sx={{ mt: 3, p: 3, backgroundColor: alpha(theme.palette.primary.main, 0.05), borderRadius: 2 }}>
+                                                            <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                                                                🎨 Blur & Effect Controls
+                                                            </Typography>
+
+                                                            {/* Blur Strength Slider */}
+                                                            <Box sx={{ mb: 3 }}>
+                                                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                                                    Blur Strength: {blurStrength} (1-50)
+                                                                </Typography>
+                                                                <Slider
+                                                                    value={blurStrength}
+                                                                    onChange={(_, value) => {
+                                                                        setBlurStrength(value as number);
+                                                                        updateOptions({ blur_strength: value as number });
+                                                                    }}
+                                                                    min={1}
+                                                                    max={50}
+                                                                    step={1}
+                                                                    disabled={disabled}
+                                                                    sx={{
+                                                                        color: theme.palette.primary.main,
+                                                                        '& .MuiSlider-thumb': {
+                                                                            boxShadow: `0 2px 8px ${alpha(theme.palette.primary.main, 0.3)}`
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    Higher values = more blur effect
+                                                                </Typography>
+                                                            </Box>
+
+                                                            {/* Gradient Blend Slider */}
+                                                            <Box>
+                                                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                                                    Gradient Blend: {(gradientBlend * 100).toFixed(0)}% (0-100%)
+                                                                </Typography>
+                                                                <Slider
+                                                                    value={gradientBlend}
+                                                                    onChange={(_, value) => {
+                                                                        setGradientBlend(value as number);
+                                                                        updateOptions({ gradient_blend: value as number });
+                                                                    }}
+                                                                    min={0.0}
+                                                                    max={1.0}
+                                                                    step={0.05}
+                                                                    disabled={disabled}
+                                                                    sx={{
+                                                                        color: theme.palette.secondary.main,
+                                                                        '& .MuiSlider-thumb': {
+                                                                            boxShadow: `0 2px 8px ${alpha(theme.palette.secondary.main, 0.3)}`
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    Controls gradient bleeding effect - higher values create more artistic blending
+                                                                </Typography>
+                                                            </Box>
+
+                                                            {/* Show current vs target ratio comparison for blur background */}
+                                                            {blurBackground && mainVideo && (
+                                                                <Box sx={{ mt: 2, p: 2, backgroundColor: alpha(theme.palette.info.main, 0.05), borderRadius: 1 }}>
+                                                                    <Typography variant="caption" color="text.secondary" gutterBottom>
+                                                                        <strong>Aspect Ratio Check:</strong>
+                                                                    </Typography>
+                                                                    <Grid container spacing={2}>
+                                                                        <Grid item xs={6}>
+                                                                            <Typography variant="body2">
+                                                                                <strong>Current:</strong> {getCurrentAspectRatio()}
+                                                                            </Typography>
+                                                                        </Grid>
+                                                                        <Grid item xs={6}>
+                                                                            <Typography variant="body2">
+                                                                                <strong>Target:</strong> {getTargetAspectRatio()}
+                                                                            </Typography>
+                                                                        </Grid>
+                                                                    </Grid>
+                                                                    {(() => {
+                                                                        const [currentW, currentH] = mainVideo.info.size;
+                                                                        const currentRatio = currentW / currentH;
+                                                                        const preset = ASPECT_RATIO_PRESETS[selectedRatioPreset];
+                                                                        const targetRatio = preset.label === "Custom"
+                                                                            ? customWidth / customHeight
+                                                                            : preset.width / preset.height;
+                                                                        const ratiosMatch = Math.abs(currentRatio - targetRatio) < 0.01;
+
+                                                                        return ratiosMatch ? (
+                                                                            <Alert severity="warning" sx={{ mt: 1, fontSize: '0.85rem' }}>
+                                                                                <strong>⚠️ Same Aspect Ratio:</strong> Your video is already in the target aspect ratio.
+                                                                                No padding will be added, so the blur effect won't be applied.
+                                                                                <br />
+                                                                                <strong>💡 Try:</strong> Convert to 9:16 (portrait) or 1:1 (square) to see the blur effect!
+                                                                            </Alert>
+                                                                        ) : (
+                                                                            <Alert severity="success" sx={{ mt: 1, fontSize: '0.85rem' }}>
+                                                                                <strong>✅ Perfect!</strong> Aspect ratios are different. Blur background effect will be applied during letterboxing.
+                                                                            </Alert>
+                                                                        );
+                                                                    })()}
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+                                                    )}
+                                                </Box>
+
+                                                {/* Padding Color (only shown when blur background is off) */}
+                                                {!blurBackground && (
+                                                    <Box>
+                                                        <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
+                                                            Padding Color
+                                                        </Typography>
+                                                        <Stack direction="row" spacing={3} alignItems="center">
+                                                            <Box
+                                                                onClick={() => setShowColorPicker(!showColorPicker)}
+                                                                sx={{
+                                                                    width: 60,
+                                                                    height: 60,
+                                                                    backgroundColor: `rgb(${padColor[0]}, ${padColor[1]}, ${padColor[2]})`,
+                                                                    border: '3px solid white',
+                                                                    borderRadius: 2,
+                                                                    cursor: 'pointer',
+                                                                    boxShadow: `0 4px 16px ${alpha(theme.palette.grey[900], 0.2)}`,
+                                                                    transition: 'all 0.3s ease',
+                                                                    '&:hover': {
+                                                                        transform: 'scale(1.1)',
+                                                                        boxShadow: `0 8px 24px ${alpha(theme.palette.grey[900], 0.3)}`
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <Box>
+                                                                <Typography variant="body1" fontWeight="bold">
+                                                                    Click to change color
+                                                                </Typography>
+                                                                <Typography variant="body2" color="text.secondary">
+                                                                    RGB: {padColor[0]}, {padColor[1]}, {padColor[2]}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Stack>
+                                                        {showColorPicker && (
+                                                            <Box sx={{ mt: 3 }}>
+                                                                <ChromePicker
+                                                                    color={{ r: padColor[0], g: padColor[1], b: padColor[2] }}
+                                                                    onChange={(color) => {
+                                                                        const newColor: [number, number, number] = [color.rgb.r, color.rgb.g, color.rgb.b];
+                                                                        setPadColor(newColor);
+                                                                        updateOptions({ pad_color: newColor });
+                                                                    }}
+                                                                />
+                                                            </Box>
+                                                        )}
                                                     </Box>
                                                 )}
                                             </Card>
