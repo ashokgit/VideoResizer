@@ -26,19 +26,49 @@ class VideoProcessor:
         self.supported_formats = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv']
         self.quality_preset = quality_preset
     
-    def get_encoding_params(self, quality_preset: Optional[str] = None, custom_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_encoding_params(self, 
+                           quality_preset: Optional[str] = None, 
+                           custom_params: Optional[Dict[str, Any]] = None,
+                           is_intermediate_for_concat: bool = False) -> Dict[str, Any]:
         """
         Get encoding parameters based on quality preset with improved defaults for concatenation.
         
         Args:
-            quality_preset: Override the instance quality preset
+            quality_preset: Override the instance quality preset. 
+                            Can be 'lossless', 'high', 'medium', 'low', or 'intermediate_lossless'.
             custom_params: Custom encoding parameters to override defaults
+            is_intermediate_for_concat: If True and quality_preset is 'lossless', uses parameters
+                                         optimized for intermediate files meant for fast concatenation.
         
         Returns:
             Dictionary of encoding parameters for MoviePy
         """
-        preset = quality_preset or self.quality_preset
+        preset_to_use = quality_preset or self.quality_preset
         
+        if is_intermediate_for_concat and preset_to_use == 'lossless':
+            # Special parameters for intermediate lossless files for fast concatenation
+            # Using -qp 0 for true lossless, and a faster preset.
+            # Audio codec PCM for better concat compatibility.
+            # MKV container is often more flexible for concatenation.
+            intermediate_params = {
+                'codec': 'libx264',
+                'audio_codec': 'aac', # Changed from pcm_s16le to aac for better stability
+                'ffmpeg_params': ['-qp', '0', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p'],
+                'audio_bitrate': '320k', # High bitrate AAC
+                'container': '.mkv' # MKV is flexible for concat
+            }
+            # Apply common parameters
+            intermediate_params.update({
+                'temp_audiofile': 'temp-audio.m4a', # Use .m4a for AAC
+                'remove_temp': True,
+                'verbose': False,
+                'logger': None,
+                'write_logfile': False,
+            })
+            if custom_params:
+                intermediate_params.update(custom_params)
+            return intermediate_params
+
         # Define quality presets with better concatenation support
         presets = {
             'lossless': {
@@ -72,8 +102,8 @@ class VideoProcessor:
         }
         
         # Get base parameters
-        if preset in presets:
-            params = presets[preset].copy()
+        if preset_to_use in presets:
+            params = presets[preset_to_use].copy()
         else:
             # Default to high quality
             params = presets['high'].copy()
@@ -102,7 +132,8 @@ class VideoProcessor:
                            blur_background: bool = False,
                            blur_strength: int = 25,
                            gradient_blend: float = 0.3,
-                           quality_preset: Optional[str] = None) -> bool:
+                           quality_preset: Optional[str] = None,
+                           is_intermediate_for_concat: bool = False) -> bool:
         """
         Resize video from one aspect ratio to another.
         
@@ -119,6 +150,7 @@ class VideoProcessor:
             blur_strength: Strength of blur effect (1-50, default: 25) - higher values = more blur
             gradient_blend: Gradient blending factor (0.0-1.0, default: 0.3) - controls bleeding effect transparency
             quality_preset: Override quality preset ('lossless', 'high', 'medium', 'low')
+            is_intermediate_for_concat: If True and quality is lossless, it will get appropriate encoding parameters and save the output as .mkv
         
         Returns:
             bool: True if successful, False otherwise
@@ -154,7 +186,17 @@ class VideoProcessor:
             print(f"✅ Video processing completed. Starting video export...")
             
             # Get encoding parameters
-            encoding_params = self.get_encoding_params(quality_preset)
+            encoding_params = self.get_encoding_params(
+                quality_preset=(quality_preset or self.quality_preset),
+                is_intermediate_for_concat=is_intermediate_for_concat
+            )
+            
+            # Determine the actual output path, potentially changing extension for intermediate mkv
+            actual_output_path = output_path
+            if is_intermediate_for_concat and (quality_preset or self.quality_preset) == 'lossless':
+                base, _ = os.path.splitext(output_path)
+                actual_output_path = base + ".mkv"
+                logging.info(f"Intermediate lossless resize: saving as {actual_output_path}")
             
             # Add progress callback for debugging
             def progress_callback(t):
@@ -166,18 +208,19 @@ class VideoProcessor:
             progress_callback.last_print = 0
             
             # Write output with quality settings and progress tracking
-            print(f"💾 Writing video file: {output_path}")
+            print(f"💾 Writing video file: {actual_output_path}")
             print(f"📝 Encoding parameters: {encoding_params}")
             
             # Remove conflicting parameters and set our preferred values
-            encoding_params_clean = encoding_params.copy()
-            encoding_params_clean['verbose'] = True     # Enable verbose output for debugging
-            encoding_params_clean['logger'] = 'bar'     # Use bar logger for progress
+            params_for_write = encoding_params.copy() # Use a new variable for clarity
+            params_for_write['verbose'] = True     # Enable verbose output for debugging
+            params_for_write['logger'] = 'bar'     # Use bar logger for progress
+            params_for_write.pop('container', None) # Remove 'container' key if it exists
             
             try:
                 processed_clip.write_videofile(
-                    output_path, 
-                    **encoding_params_clean
+                    actual_output_path, 
+                    **params_for_write # Use the cleaned parameters
                 )
                 print(f"✅ Video file written successfully!")
             except Exception as write_error:
@@ -192,7 +235,7 @@ class VideoProcessor:
             clip.close()
             processed_clip.close()
             
-            print(f"Video successfully processed and saved to: {output_path}")
+            print(f"Video successfully processed and saved to: {actual_output_path}")
             return True
             
         except Exception as e:
@@ -207,7 +250,8 @@ class VideoProcessor:
                           output_path: str,
                           start_time: float, 
                           end_time: float,
-                          quality_preset: Optional[str] = None) -> bool:
+                          quality_preset: Optional[str] = None,
+                          is_intermediate_for_concat: bool = False) -> bool:
         """
         Crop video by time (trim video).
         
@@ -217,6 +261,7 @@ class VideoProcessor:
             start_time: Start time in seconds
             end_time: End time in seconds
             quality_preset: Override quality preset ('lossless', 'high', 'medium', 'low')
+            is_intermediate_for_concat: If True and quality is lossless, it will get appropriate encoding parameters and save the output as .mkv
         
         Returns:
             bool: True if successful, False otherwise
@@ -243,17 +288,32 @@ class VideoProcessor:
             # Crop the video
             cropped_clip = clip.subclip(start_time, end_time)
             
-            # Get encoding parameters
-            encoding_params = self.get_encoding_params(quality_preset)
+            # Get encoding parameters, considering if it's an intermediate lossless file
+            encoding_params = self.get_encoding_params(
+                quality_preset=(quality_preset or self.quality_preset),
+                is_intermediate_for_concat=is_intermediate_for_concat
+            )
+            
+            # Determine the actual output path, potentially changing extension for intermediate mkv
+            actual_output_path = output_path
+            if is_intermediate_for_concat and (quality_preset or self.quality_preset) == 'lossless':
+                # Ensure .mkv extension for intermediate lossless files
+                base, _ = os.path.splitext(output_path)
+                actual_output_path = base + ".mkv"
+                logging.info(f"Intermediate lossless crop: saving as {actual_output_path}")
+            
+            # Clean params for write_videofile by removing 'container' key if it exists
+            params_for_write = encoding_params.copy()
+            params_for_write.pop('container', None)
             
             # Write output with quality settings
-            cropped_clip.write_videofile(output_path, **encoding_params)
+            cropped_clip.write_videofile(actual_output_path, **params_for_write)
             
             # Clean up
             clip.close()
             cropped_clip.close()
             
-            print(f"Video cropped from {start_time}s to {end_time}s and saved to: {output_path}")
+            print(f"Video cropped from {start_time}s to {end_time}s and saved to: {actual_output_path}")
             return True
             
         except Exception as e:
@@ -315,6 +375,23 @@ class VideoProcessor:
             print(f"Concatenating {len(video_paths)} videos")
             print(f"Quality preset: {quality_preset or self.quality_preset}")
             
+            # Attempt direct FFmpeg stream copy for lossless concatenation if applicable
+            if (quality_preset or self.quality_preset) == 'lossless':
+                # Check if all input files are .mkv (our intermediate lossless format)
+                # This is a heuristic; ideally, we'd have more robust tracking of intermediate formats.
+                are_all_mkv = all(path.lower().endswith('.mkv') for path in video_paths)
+                if are_all_mkv:
+                    logging.info("All inputs are MKV, attempting FFmpeg direct lossless concatenation.")
+                    if self._concatenate_videos_ffmpeg_lossless(video_paths, output_path):
+                        # If FFmpeg direct concat is successful, we might need to handle audio separately
+                        # if MoviePy was expecting to manage it. For now, assume it's fine.
+                        logging.info(f"✅ FFmpeg direct lossless concatenation successful for: {output_path}")
+                        return True
+                    else:
+                        logging.warning("FFmpeg direct lossless concatenation failed. Falling back to MoviePy method.")
+                else:
+                    logging.warning("Not all inputs are MKV for lossless preset. Using MoviePy for concatenation. This might be slow.")
+
             # Load all video clips with memory optimization
             clips = []
             main_clip = None
@@ -388,9 +465,13 @@ class VideoProcessor:
             
             # Clean up memory
             print("🧹 Cleaning up memory...")
-            for clip in clips:
-                clip.close()
-            final_clip.close()
+            # Ensure final_clip is closed if it was created
+            if 'final_clip' in locals() and final_clip:
+                final_clip.close()
+            # Ensure all clips in the list are closed
+            for clip_obj in clips: # Changed variable name to avoid conflict
+                if clip_obj: # Check if clip_obj is not None
+                    clip_obj.close()
             
             print(f"✅ Videos concatenated and saved to: {output_path}")
             return True
@@ -476,12 +557,16 @@ class VideoProcessor:
             with tempfile.TemporaryDirectory() as temp_dir:
                 current_file = input_path
                 processed_cta_path = cta_video_path
+                
+                # Determine if we are using intermediate lossless mkv files
+                use_intermediate_mkv = (quality_preset or self.quality_preset) == 'lossless'
 
                 # Step 1: Time cropping if specified
                 if start_time is not None and end_time is not None:
                     print(f"📽️ STEP 1: Time cropping from {start_time}s to {end_time}s")
-                    temp_cropped = os.path.join(temp_dir, "temp_cropped.mp4")
-                    if not self.crop_video_by_time(current_file, temp_cropped, start_time, end_time, quality_preset):
+                    temp_cropped_ext = ".mkv" if use_intermediate_mkv else ".mp4"
+                    temp_cropped = os.path.join(temp_dir, f"temp_cropped{temp_cropped_ext}")
+                    if not self.crop_video_by_time(current_file, temp_cropped, start_time, end_time, quality_preset, is_intermediate_for_concat=use_intermediate_mkv):
                         return False
                     current_file = temp_cropped
                 else:
@@ -492,17 +577,26 @@ class VideoProcessor:
                     print(f"📐 STEP 2: Changing aspect ratio to {target_ratio[0]}:{target_ratio[1]} using {resize_method}")
                     if blur_background and resize_method == 'pad':
                         print(f"🌫️ Using blurred background for letterboxing")
-                    temp_resized = os.path.join(temp_dir, "temp_resized.mp4")
-                    if not self.resize_aspect_ratio(current_file, temp_resized, target_ratio, resize_method, pad_color, blur_background, blur_strength, gradient_blend, quality_preset):
+                    
+                    temp_resized_ext = ".mkv" if use_intermediate_mkv else ".mp4"
+                    temp_resized = os.path.join(temp_dir, f"temp_resized{temp_resized_ext}")
+                    if not self.resize_aspect_ratio(current_file, temp_resized, target_ratio, resize_method, pad_color, blur_background, blur_strength, gradient_blend, quality_preset, is_intermediate_for_concat=use_intermediate_mkv):
                         return False
                     current_file = temp_resized
 
                     # Also resize CTA video to match if it exists
                     if processed_cta_path and os.path.exists(processed_cta_path):
                         print(f"📐 STEP 2b: Resizing CTA video to match aspect ratio {target_ratio[0]}:{target_ratio[1]}")
-                        temp_cta_resized = os.path.join(temp_dir, "temp_cta_resized.mp4")
+                        temp_cta_resized_ext = ".mkv" if use_intermediate_mkv else ".mp4"
+                        temp_cta_resized = os.path.join(temp_dir, f"temp_cta_resized{temp_cta_resized_ext}")
                         try:
-                            if self.resize_aspect_ratio(processed_cta_path, temp_cta_resized, target_ratio, resize_method, pad_color, blur_background, blur_strength, gradient_blend, quality_preset):
+                            cta_resize_quality = 'high' # Always use 'high' for CTA intermediate resizing for speed
+                            if use_intermediate_mkv: # but if main is lossless, output CTA intermediate as mkv too
+                                print(f"ℹ️ Using '{cta_resize_quality}' quality for CTA video resizing (main preset: {quality_preset}), outputting as .mkv intermediate.")
+                            else:
+                                print(f"ℹ️ Using '{cta_resize_quality}' quality for CTA video resizing (main preset: {quality_preset}).")
+
+                            if self.resize_aspect_ratio(processed_cta_path, temp_cta_resized, target_ratio, resize_method, pad_color, blur_background, blur_strength, gradient_blend, cta_resize_quality, is_intermediate_for_concat=use_intermediate_mkv):
                                 processed_cta_path = temp_cta_resized
                                 print("✅ CTA video successfully resized")
                             else:
@@ -520,15 +614,16 @@ class VideoProcessor:
                     print(f"Main video: {current_file}")
                     print(f"CTA video: {processed_cta_path}")
 
-                    # Get video info for debugging
                     main_info = self.get_video_info(current_file)
                     cta_info = self.get_video_info(processed_cta_path)
 
                     if main_info and cta_info:
-                        print(f"Main video info: {main_info['size']} @ {main_info['fps']:.1f}fps")
-                        print(f"CTA video info: {cta_info['size']} @ {cta_info['fps']:.1f}fps")
-
-                    temp_concatenated = os.path.join(temp_dir, "temp_concatenated.mp4")
+                        print(f"Main video info: {main_info['size']} @ {main_info['fps']:.1f}fps, Duration: {main_info.get('duration', 'N/A')}s")
+                        print(f"CTA video info: {cta_info['size']} @ {cta_info['fps']:.1f}fps, Duration: {cta_info.get('duration', 'N/A')}s")
+                    
+                    temp_concat_ext = ".mkv" if use_intermediate_mkv else ".mp4" # Output of concat should also be mkv if inputs were
+                    temp_concatenated = os.path.join(temp_dir, f"temp_concatenated{temp_concat_ext}")
+                    
                     try:
                         if not self.concatenate_videos([current_file, processed_cta_path], temp_concatenated, quality_preset):
                             print("❌ Failed to concatenate videos")
@@ -541,20 +636,70 @@ class VideoProcessor:
                         return False
                 else:
                     print(f"⏭️ STEP 3: No CTA video to append")
-                    # current_file is already the correct file
 
                 # Step 4: After all processing steps, overlay watermark if provided
+                # The output_path (final destination) is usually .mp4
+                # If current_file is .mkv (from lossless concat) and watermark is applied, add_watermark will re-encode to .mp4
                 if watermark_path and os.path.exists(watermark_path):
                     print(f"🖼️ Adding watermark: {watermark_path} at {watermark_position}")
-                    temp_watermarked = os.path.join(temp_dir, "temp_watermarked.mp4")
-                    if not self.add_watermark(current_file, temp_watermarked, watermark_path, watermark_position):
+                    # Ensure temp_watermarked uses the final output_path's extension (typically .mp4)
+                    # or a specific temp .mp4 if output_path is not .mp4 for some reason.
+                    # For now, assume output_path from Flask app is .mp4, so add_watermark writes to a temp .mp4
+                    temp_watermarked = os.path.join(temp_dir, f"temp_watermarked{os.path.splitext(output_path)[1] or '.mp4'}")
+                    
+                    # Watermarking re-encodes, so it doesn't need is_intermediate_for_concat.
+                    # It should use the final quality_preset.
+                    if not self.add_watermark(current_file, temp_watermarked, watermark_path, watermark_position, quality_preset_override=quality_preset):
                         print("❌ Failed to add watermark")
                         return False
                     current_file = temp_watermarked
 
-                # Save final output
-                import shutil
-                shutil.copy2(current_file, output_path)
+                # Final step: Ensure current_file is moved to output_path with the correct container
+                # If current_file is .mkv (from lossless direct concat without watermark) and output_path is .mp4, convert.
+                final_output_is_mp4 = output_path.lower().endswith('.mp4')
+                current_file_is_mkv = current_file.lower().endswith('.mkv')
+
+                if current_file_is_mkv and final_output_is_mp4 and current_file != output_path:
+                    if (quality_preset or self.quality_preset) == 'lossless':
+                        logging.info(f"Lossless MKV to MP4 conversion needed for final output: {current_file} -> {output_path}")
+                        try:
+                            # Attempt direct stream copy if codecs are compatible (H.264 in MKV to H.264 in MP4)
+                            # PCM audio in MKV needs re-encoding to AAC for MP4
+                            ffmpeg_cmd = [
+                                'ffmpeg', '-y', '-i', current_file,
+                                '-c:v', 'copy', # Copy video stream
+                                '-c:a', 'aac', '-b:a', '320k', # Re-encode audio to AAC for MP4 compatibility
+                                '-movflags', '+faststart',
+                                output_path
+                            ]
+                            logging.info(f"Executing FFmpeg for MKV to MP4 (lossless video, AAC audio): {' '.join(ffmpeg_cmd)}")
+                            process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            stdout, stderr = process.communicate()
+                            if process.returncode != 0:
+                                logging.error(f"FFmpeg MKV to MP4 conversion failed (video copy, audio AAC). StdErr: {stderr.decode(errors='ignore')}")
+                                logging.info("Falling back to MoviePy re-encode for MKV to MP4 (lossless).")
+                                clip = VideoFileClip(current_file)
+                                clip.write_videofile(output_path, **self.get_encoding_params(quality_preset='lossless'))
+                                clip.close()
+                            else:
+                                logging.info("FFmpeg MKV to MP4 conversion (video copy, audio AAC) successful.")
+                        except Exception as e_conv:
+                            logging.error(f"Error during MKV to MP4 conversion for {current_file}: {e_conv}. Falling back to MoviePy re-encode.")
+                            traceback.print_exc()
+                            clip = VideoFileClip(current_file)
+                            clip.write_videofile(output_path, **self.get_encoding_params(quality_preset='lossless')) # Full lossless re-encode
+                            clip.close()
+                    else: # Should not happen if current_file_is_mkv was due to lossless path
+                        logging.info(f"Copying non-lossless MKV {current_file} to MP4 {output_path} (may involve re-encode by MoviePy if add_watermark wasn't called)")
+                        # This scenario is less likely if .mkv is only for lossless intermediates.
+                        # If it occurs, just use MoviePy to handle it.
+                        clip = VideoFileClip(current_file)
+                        clip.write_videofile(output_path, **self.get_encoding_params(quality_preset=(quality_preset or self.quality_preset)))
+                        clip.close()
+                elif current_file != output_path:
+                    import shutil
+                    shutil.copy2(current_file, output_path)
+                
                 print(f"✅ Complete video processing finished. Output saved to: {output_path}")
                 print(f"🎉 PROCESS_VIDEO_COMPLETE RETURNING TRUE - SUCCESS!")
                 return True
@@ -940,7 +1085,7 @@ class VideoProcessor:
         
         return info
 
-    def add_watermark(self, input_path: str, output_path: str, watermark_path: str, position: Optional[str] = 'bottom-right'):
+    def add_watermark(self, input_path: str, output_path: str, watermark_path: str, position: Optional[str] = 'bottom-right', quality_preset_override: Optional[str] = None):
         """Overlay watermark image at the specified position using MoviePy."""
         from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
         try:
@@ -961,7 +1106,7 @@ class VideoProcessor:
                 pos = ('center', 'center')
             watermark = watermark.set_pos(pos)
             final = CompositeVideoClip([video, watermark])
-            final.write_videofile(output_path, **self.get_encoding_params())
+            final.write_videofile(output_path, **self.get_encoding_params(quality_preset=quality_preset_override))
             video.close()
             watermark.close()
             final.close()
@@ -1260,6 +1405,78 @@ class VideoProcessor:
         except Exception as e:
             print(f"⚠️ Standard gradient failed, using no gradient: {str(e)}")
             return clip
+
+    def _concatenate_videos_ffmpeg_lossless(self, video_paths: List[str], output_path: str) -> bool:
+        """
+        Concatenate videos using FFmpeg direct command with concat demuxer for lossless stream copying.
+        Assumes input videos are in a compatible format (e.g., intermediate lossless MKV).
+
+        Args:
+            video_paths: List of paths to video files to concatenate.
+            output_path: Path for the output concatenated video file.
+
+        Returns:
+            bool: True if successful, False otherwise.
+        """
+        logging.info(f"Attempting FFmpeg direct lossless concatenation for {len(video_paths)} videos to {output_path}")
+        if len(video_paths) < 1:
+            logging.error("No videos provided for FFmpeg concatenation.")
+            return False
+
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        # Create a temporary file list for FFmpeg's concat demuxer
+        list_file_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as tmp_list_file:
+                for path in video_paths:
+                    # FFmpeg concat demuxer requires 'file' directive and quoted paths
+                    # Paths need to be absolute or relative to where ffmpeg is run (safer with absolute)
+                    abs_path = os.path.abspath(path)
+                    tmp_list_file.write(f"file '{abs_path}'\n")
+                list_file_path = tmp_list_file.name
+            logging.debug(f"FFmpeg concat list file created: {list_file_path}")
+
+            # Construct FFmpeg command
+            # -f concat: Use the concat demuxer
+            # -safe 0: Allow unsafe file paths (needed if paths are complex, though we use abs paths)
+            # -i list_file_path: Input file list
+            # -c copy: Stream copy video and audio codecs (lossless and fast)
+            command = [
+                'ffmpeg',
+                '-y',  # Overwrite output file if it exists
+                '-f', 'concat',
+                '-safe', '0', 
+                '-i', list_file_path,
+                '-c', 'copy',
+                output_path
+            ]
+            
+            logging.info(f"Executing FFmpeg command: {' '.join(command)}")
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+
+            if process.returncode == 0:
+                logging.info(f"FFmpeg direct concatenation successful: {output_path}")
+                return True
+            else:
+                logging.error(f"FFmpeg direct concatenation failed. Return code: {process.returncode}")
+                logging.error(f"FFmpeg stdout: {stdout.decode(errors='ignore')}")
+                logging.error(f"FFmpeg stderr: {stderr.decode(errors='ignore')}")
+                return False
+
+        except Exception as e:
+            logging.error(f"Exception during FFmpeg direct concatenation: {str(e)}")
+            traceback.print_exc()
+            return False
+        finally:
+            if list_file_path and os.path.exists(list_file_path):
+                try:
+                    os.remove(list_file_path)
+                    logging.debug(f"Removed temp list file: {list_file_path}")
+                except Exception as e_remove:
+                    logging.warning(f"Failed to remove temp list file {list_file_path}: {e_remove}")
 
 
 # Example usage

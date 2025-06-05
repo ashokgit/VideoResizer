@@ -983,7 +983,11 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
                                                     background: alpha(theme.palette.success.main, 0.05)
                                                 }
                                             }}
-                                            onClick={() => setQualityPreset(quality.value as 'lossless' | 'high' | 'medium' | 'low')}
+                                            onClick={() => {
+                                                const newQuality = quality.value as 'lossless' | 'high' | 'medium' | 'low';
+                                                setQualityPreset(newQuality);
+                                                updateOptions({ quality_preset: newQuality });
+                                            }}
                                         >
                                             <CardContent sx={{ p: 2 }}>
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1005,6 +1009,18 @@ const ProcessingOptions: React.FC<ProcessingOptionsProps> = ({ mainVideo, onCtaV
                                     </Grid>
                                 ))}
                             </Grid>
+
+                            {qualityPreset === 'lossless' && (
+                                <Fade in={true}>
+                                    <Alert severity="warning" sx={{ mt: 3, borderRadius: 1.5 }}>
+                                        <Typography variant="body2">
+                                            <strong>Warning:</strong> The 'Lossless' quality preset can lead to very long processing times
+                                            (potentially >10-20 minutes for longer videos) and extremely large file sizes.
+                                            For most uses, 'High Quality' is recommended.
+                                        </Typography>
+                                    </Alert>
+                                </Fade>
+                            )}
                         </CardContent>
                     </Card>
                 </Grid>

@@ -350,7 +350,7 @@ def check_memory_availability(required_gb=2):
 class ProcessingTimeoutHandler:
     """Handle processing timeouts and cleanup."""
     
-    def __init__(self, timeout_seconds=600):  # 10 minutes default
+    def __init__(self, timeout_seconds=1800):  # 30 minutes default (increased from 10)
         self.timeout_seconds = timeout_seconds
         self.is_processing = False
         self.start_time = None
@@ -456,7 +456,7 @@ def process_video():
         enable_ratio_change = data.get('enable_ratio_change', False)
         target_ratio_data = data.get('target_ratio')
         resize_method = data.get('resize_method', 'crop')
-        pad_color_hex = data.get('pad_color', '#000000')
+        pad_color_data = data.get('pad_color')
         blur_background = data.get('blur_background', False)
         blur_strength = data.get('blur_strength', 25)
         gradient_blend = data.get('gradient_blend', 0.3)
@@ -498,15 +498,32 @@ def process_video():
                 logging.error(f"Error parsing target ratio: {e}")
                 return jsonify({'error': f'Invalid target ratio: {e}'}), 400
         
-        # Convert hex color to RGB
-        pad_color = (0, 0, 0)  # Default black
-        try:
-            if pad_color_hex.startswith('#'):
-                hex_color = pad_color_hex[1:]
-                pad_color = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-                logging.info(f"Parsed pad color: {pad_color}")
-        except Exception as e:
-            logging.warning(f"Error parsing pad color, using black: {e}")
+        # Pad color processing
+        final_pad_color = (0, 0, 0)  # Default to black
+
+        if isinstance(pad_color_data, list) and len(pad_color_data) == 3:
+            try:
+                final_pad_color = tuple(int(c) for c in pad_color_data)
+                logging.info(f"Parsed pad color from list: {final_pad_color}")
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Error parsing pad color list {pad_color_data}, using black: {e}")
+                final_pad_color = (0, 0, 0)
+        elif isinstance(pad_color_data, str) and pad_color_data.startswith('#'):
+            try:
+                hex_color = pad_color_data.lstrip('#')
+                if len(hex_color) == 6:
+                    final_pad_color = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                    logging.info(f"Parsed pad color from hex {pad_color_data}: {final_pad_color}")
+                else:
+                    logging.warning(f"Invalid hex color format {pad_color_data}, using black.")
+                    final_pad_color = (0, 0, 0)
+            except ValueError as e:
+                logging.warning(f"Error parsing pad color hex {pad_color_data}, using black: {e}")
+                final_pad_color = (0, 0, 0)
+        elif pad_color_data is not None:
+            logging.warning(f"Unknown pad color format {pad_color_data}, using black.")
+            final_pad_color = (0, 0, 0)
+        # If pad_color_data is None, it will correctly use the default black initialized above.
         
         # Get CTA video path if enabled
         cta_video_path = None
@@ -557,7 +574,7 @@ def process_video():
                     end_time=actual_end_time,
                     target_ratio=target_ratio,
                     resize_method=resize_method,
-                    pad_color=pad_color,
+                    pad_color=final_pad_color,
                     blur_background=blur_background,
                     blur_strength=blur_strength,
                     gradient_blend=gradient_blend,
